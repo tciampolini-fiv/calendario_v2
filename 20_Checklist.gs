@@ -23,6 +23,14 @@ function generateChecklistForSelectedEvent() {
   refreshEventSummary_(eventId, event._row);
 }
 
+function generateChecklistForPanel(eventId) {
+  const found = findCalendarEventById_(eventId);
+  if (!found) throw new Error('Evento non trovato.');
+  generateChecklistForEvent_(eventId, found.event);
+  refreshEventSummary_(eventId, found.row);
+  return getEventPanelData(eventId);
+}
+
 function generateChecklistForEvent_(eventId, event) {
   const target = sh_(APP.SHEETS.CHECKLIST);
   const existing = getChecklistForEvent_(eventId);
