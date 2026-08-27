@@ -3,7 +3,12 @@ function openEventSidebar() {
   SpreadsheetApp.getUi().showSidebar(tpl.evaluate().setTitle('Dettaglio evento'));
 }
 
-function getCurrentEventPanelData() {
+/**
+ * Endpoint volutamente leggero per la sidebar.
+ * Controlla soltanto la riga attiva e il relativo ID; i dati completi
+ * vengono caricati solo quando la selezione cambia.
+ */
+function getCurrentEventSelection() {
   const active = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
   if (!active || active.getName() !== APP.SHEETS.CALENDAR) {
     return { state: 'NO_EVENT', message: 'Seleziona una riga nel foglio Calendario.' };
@@ -15,28 +20,30 @@ function getCurrentEventPanelData() {
     return { state: 'NO_EVENT', message: 'Seleziona una riga evento.' };
   }
 
-  const map = headerMap_(active);
-  const values = active.getRange(rowNumber, 1, 1, active.getLastColumn()).getValues()[0];
-  const event = {};
-  Object.keys(map).forEach(h => event[h] = values[map[h] - 1]);
-  event._row = rowNumber;
-
-  const hasEventData = [
-    APP.CALENDAR_HEADERS.START,
-    APP.CALENDAR_HEADERS.TYPE,
-    APP.CALENDAR_HEADERS.EVENT,
-    APP.CALENDAR_HEADERS.CLASS,
-    APP.CALENDAR_HEADERS.LOCATION
-  ].some(h => String(event[h] || '').trim() !== '');
-
+  // A:H bastano per capire se la riga contiene un evento e recuperare l'ID.
+  const values = active.getRange(rowNumber, 1, 1, 8).getValues()[0];
+  const hasEventData = values.slice(1).some(v => String(v || '').trim() !== '');
   if (!hasEventData) {
     return { state: 'NO_EVENT', message: 'La riga selezionata è vuota.' };
   }
 
-  const id = ensureEventId_(event);
-  const data = getEventPanelData(id);
+  let eventId = String(values[0] || '').trim();
+  if (!eventId) {
+    const event = { _row: rowNumber };
+    event[APP.CALENDAR_HEADERS.ID] = '';
+    eventId = ensureEventId_(event);
+  }
+
+  return { state: 'EVENT', eventId: eventId, row: rowNumber };
+}
+
+// Compatibilità con la prima versione del pannello.
+function getCurrentEventPanelData() {
+  const selection = getCurrentEventSelection();
+  if (selection.state !== 'EVENT') return selection;
+  const data = getEventPanelData(selection.eventId);
   data.state = 'EVENT';
-  data.row = rowNumber;
+  data.row = selection.row;
   return data;
 }
 
