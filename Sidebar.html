@@ -11,34 +11,45 @@
 <script>
 let currentEventId='';
 let currentRow=null;
-let loading=false;
+let checking=false;
+let detailLoading=false;
 
 function money(v){return new Intl.NumberFormat('it-IT',{style:'currency',currency:'EUR'}).format(Number(v||0));}
 function dateFmt(v){if(!v)return ''; const d=new Date(v); return isNaN(d)?String(v):d.toLocaleDateString('it-IT');}
-function isoDate(v){if(!v)return ''; const d=new Date(v); if(isNaN(d)) return ''; return d.toISOString().slice(0,10);}
 function esc(v){return String(v??'').replace(/[&<>"']/g,s=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[s]));}
 function isDone(s){return ['FATTO','COMPLETATA'].includes(String(s||'').toUpperCase());}
 
 function pollSelection(){
- if(loading) return;
- loading=true;
- google.script.run.withSuccessHandler(data=>{
-   loading=false;
-   if(data.state==='NO_EVENT'){
-     currentEventId=''; currentRow=null;
-     document.getElementById('app').innerHTML='<div class="status">'+esc(data.message||'Seleziona una riga evento nel Calendario.')+'</div>';
+ if(checking) return;
+ checking=true;
+ google.script.run.withSuccessHandler(sel=>{
+   checking=false;
+   if(sel.state==='NO_EVENT'){
+     if(currentEventId || currentRow!==null){
+       currentEventId=''; currentRow=null;
+       document.getElementById('app').innerHTML='<div class="status">'+esc(sel.message||'Seleziona una riga evento nel Calendario.')+'</div>';
+     }
      return;
    }
-   if(data.eventId!==currentEventId || data.row!==currentRow){
-     currentEventId=data.eventId; currentRow=data.row; render(data);
-   }
- }).withFailureHandler(showError).getCurrentEventPanelData();
+   if(sel.eventId===currentEventId && sel.row===currentRow) return;
+   currentEventId=sel.eventId;
+   currentRow=sel.row;
+   loadEvent(sel.eventId);
+ }).withFailureHandler(showError).getCurrentEventSelection();
 }
 
-function reload(){
- if(!currentEventId){pollSelection(); return;}
- google.script.run.withSuccessHandler(render).withFailureHandler(showError).getEventPanelData(currentEventId);
+function loadEvent(eventId){
+ if(detailLoading) return;
+ detailLoading=true;
+ document.getElementById('app').innerHTML='<div class="loading">Caricamento evento…</div>';
+ google.script.run.withSuccessHandler(data=>{
+   detailLoading=false;
+   if(data.eventId!==currentEventId) return;
+   render(data);
+ }).withFailureHandler(showError).getEventPanelData(eventId);
 }
+
+function reload(){ if(currentEventId) loadEvent(currentEventId); else pollSelection(); }
 
 function render(data){
  currentEventId=data.eventId||currentEventId; currentRow=data.row||currentRow;
@@ -109,7 +120,7 @@ function render(data){
 }
 
 function toggle(id){document.getElementById(id)?.classList.toggle('hidden');}
-function showError(e){loading=false;document.getElementById('app').innerHTML='<div class="status late"><b>Errore</b><br>'+esc(e?.message||e)+'</div>';}
+function showError(e){checking=false;detailLoading=false;document.getElementById('app').innerHTML='<div class="status late"><b>Errore</b><br>'+esc(e?.message||e)+'</div>';}
 function setTask(id,done){google.script.run.withSuccessHandler(render).withFailureHandler(showError).setChecklistItemStatus(id,done);}
 function deleteTask(id){if(confirm('Eliminare questa attività?'))google.script.run.withSuccessHandler(render).withFailureHandler(showError).deleteChecklistItem(id);}
 function saveTask(){google.script.run.withSuccessHandler(render).withFailureHandler(showError).addChecklistItem(currentEventId,document.getElementById('taskName').value,document.getElementById('taskDue').value,document.getElementById('taskPriority').value,document.getElementById('taskNote').value);}
@@ -123,7 +134,7 @@ function saveExpense(){
 }
 
 pollSelection();
-setInterval(pollSelection,1200);
+setInterval(pollSelection,700);
 </script>
 </body>
 </html>
