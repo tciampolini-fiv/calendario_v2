@@ -3,7 +3,7 @@
 <head>
   <base target="_top">
   <style>
-    body{font-family:Arial,sans-serif;padding:12px;color:#202124}.muted{color:#5f6368}.card{border:1px solid #dadce0;border-radius:8px;padding:10px;margin:8px 0}.row{display:flex;justify-content:space-between;gap:12px}.value{font-weight:600}.late{color:#d93025}.warn{color:#b06000}.ok{color:#188038}button{padding:7px 10px;margin-top:8px}
+    body{font-family:Arial,sans-serif;padding:12px;color:#202124}.muted{color:#5f6368}.card{border:1px solid #dadce0;border-radius:8px;padding:10px;margin:8px 0}.row{display:flex;justify-content:space-between;gap:12px}.value{font-weight:600}.late{color:#d93025}.warn{color:#b06000}.ok{color:#188038}.error{background:#fce8e6;color:#b3261e;padding:10px;border-radius:8px;white-space:pre-wrap}button{padding:7px 10px;margin-top:8px}
   </style>
 </head>
 <body>
@@ -13,20 +13,39 @@ const EVENT_ID = '<?= eventId ?>';
 function money(v){return new Intl.NumberFormat('it-IT',{style:'currency',currency:'EUR'}).format(Number(v||0));}
 function dateFmt(v){if(!v)return ''; const d=new Date(v); return isNaN(d)?String(v):d.toLocaleDateString('it-IT');}
 function render(data){
-  const e=data.event||{}, c=data.checklist||[], x=data.expenses||[], p=data.participants||[];
-  const done=c.filter(i=>String(i.status).toUpperCase()==='COMPLETATA'||String(i.status).toUpperCase()==='FATTO').length;
-  const actual=x.reduce((s,i)=>s+Number(i.actual||0),0);
-  const refunds=x.filter(i=>String(i.type).toUpperCase()==='RIMBORSO').reduce((s,i)=>s+Number(i.actual||0),0);
-  document.getElementById('app').innerHTML=`
-    <h2>${e['EVENTO']||e['TIPO']||'Evento'}</h2>
-    <div class="muted">${dateFmt(e['DATA INIZIO'])} - ${dateFmt(e['DATA FINE'])} · ${e["LOCALITA'"]||''}</div>
-    <div class="card"><b>Riepilogo</b><div class="row"><span>Checklist</span><span class="value">${done}/${c.length}</span></div><div class="row"><span>Consuntivo</span><span class="value">${money(actual)}</span></div><div class="row"><span>Partecipanti</span><span class="value">${p.length}</span></div></div>
-    <div class="card"><b>Rimborso atleta</b><div class="row"><span>Massimale</span><span class="value">${money(data.refundLimit.value)}</span></div><div class="muted">Fonte: ${data.refundLimit.source}</div></div>
-    <div class="card"><b>Checklist</b>${c.length?c.slice(0,8).map(i=>`<div>${(String(i.status).toUpperCase()==='COMPLETATA'||String(i.status).toUpperCase()==='FATTO')?'✅':'☐'} ${i.task}${i.dueDate?' · '+dateFmt(i.dueDate):''}</div>`).join(''):'<div class="muted">Nessuna attività ancora generata.</div>'}</div>
-    <div class="card"><b>Spese</b><div class="row"><span>Totale registrato</span><span class="value">${money(actual)}</span></div><div class="row"><span>Rimborsi</span><span class="value">${money(refunds)}</span></div></div>
-  `;
+  try {
+    const e=data.event||{}, c=data.checklist||[], x=data.expenses||[], p=data.participants||[];
+    const done=c.filter(i=>String(i.status).toUpperCase()==='COMPLETATA'||String(i.status).toUpperCase()==='FATTO').length;
+    const actual=x.reduce((s,i)=>s+Number(i.actual||0),0);
+    const refunds=x.filter(i=>String(i.type).toUpperCase()==='RIMBORSO').reduce((s,i)=>s+Number(i.actual||0),0);
+    const refundLimit=(data.refundLimit&&data.refundLimit.value)||0;
+    const refundSource=(data.refundLimit&&data.refundLimit.source)||'STANDARD';
+    document.getElementById('app').innerHTML=`
+      <h2>${e['EVENTO']||e['TIPO']||'Evento'}</h2>
+      <div class="muted">${dateFmt(e['DATA INIZIO'])} - ${dateFmt(e['DATA FINE'])} · ${e["LOCALITA'"]||''}</div>
+      <div class="card"><b>Riepilogo</b><div class="row"><span>Checklist</span><span class="value">${done}/${c.length}</span></div><div class="row"><span>Consuntivo</span><span class="value">${money(actual)}</span></div><div class="row"><span>Partecipanti</span><span class="value">${p.length}</span></div></div>
+      <div class="card"><b>Rimborso atleta</b><div class="row"><span>Massimale</span><span class="value">${money(refundLimit)}</span></div><div class="muted">Fonte: ${refundSource}</div></div>
+      <div class="card"><b>Checklist</b>${c.length?c.slice(0,8).map(i=>`<div>${(String(i.status).toUpperCase()==='COMPLETATA'||String(i.status).toUpperCase()==='FATTO')?'✅':'☐'} ${i.task}${i.dueDate?' · '+dateFmt(i.dueDate):''}</div>`).join(''):'<div class="muted">Nessuna attività ancora generata.</div>'}</div>
+      <div class="card"><b>Spese</b><div class="row"><span>Totale registrato</span><span class="value">${money(actual)}</span></div><div class="row"><span>Rimborsi</span><span class="value">${money(refunds)}</span></div></div>
+    `;
+  } catch(err) {
+    showError(err);
+  }
 }
-google.script.run.withSuccessHandler(render).withFailureHandler(e=>document.getElementById('app').innerText=e.message).getEventPanelData(EVENT_ID);
+function showError(err){
+  const message=(err&&err.message)?err.message:String(err||'Errore sconosciuto');
+  document.getElementById('app').innerHTML='<div class="error"><b>Errore nel caricamento del pannello</b><br><br>'+message+'</div>';
+}
+setTimeout(()=>{
+  const el=document.getElementById('app');
+  if(el && el.textContent.trim()==='Caricamento...') {
+    el.innerHTML='<div class="error"><b>Il pannello non ha ricevuto risposta.</b><br><br>Controlla le esecuzioni Apps Script oppure riprova dopo un nuovo pull.</div>';
+  }
+},12000);
+google.script.run
+  .withSuccessHandler(render)
+  .withFailureHandler(showError)
+  .getEventPanelData(EVENT_ID);
 </script>
 </body>
 </html>
