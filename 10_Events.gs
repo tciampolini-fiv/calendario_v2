@@ -3,7 +3,7 @@ function openEventSidebar() {
   const id = ensureEventId_(event);
   const tpl = HtmlService.createTemplateFromFile('Sidebar');
   tpl.eventId = id;
-  SpreadsheetApp.getUi().showSidebar(tpl.evaluate().setTitle('Dettaglio evento').setWidth(420));
+  SpreadsheetApp.getUi().showSidebar(tpl.evaluate().setTitle('Dettaglio evento'));
 }
 
 function getEventPanelData(eventId) {
@@ -11,17 +11,21 @@ function getEventPanelData(eventId) {
   const rows = cal.getDataRange().getValues();
   const headers = rows[0];
   const idCol = headers.indexOf(APP.CALENDAR_HEADERS.ID);
+  if (idCol < 0) throw new Error('Colonna ID EVENTO non trovata nel Calendario.');
+
   const row = rows.slice(1).find(r => String(r[idCol]) === String(eventId));
   if (!row) throw new Error('Evento non trovato: ' + eventId);
+
   const event = {};
   headers.forEach((h, i) => event[h] = row[i]);
-  return {
+
+  return clientSafe_({
     event: event,
     refundLimit: getEventRefundLimit_(eventId, event),
     checklist: getChecklistForEvent_(eventId),
     expenses: getExpensesForEvent_(eventId),
     participants: getParticipantsForEvent_(eventId)
-  };
+  });
 }
 
 function getEventRefundLimit_(eventId, event) {
@@ -30,7 +34,12 @@ function getEventRefundLimit_(eventId, event) {
     if (String(meta[i][0]) === String(eventId)) {
       const value = Number(meta[i][1] || 0);
       const custom = meta[i][2] === true;
-      if (custom || value > 0) return { value: value, source: custom ? 'PERSONALIZZATO' : (meta[i][3] || 'STANDARD') };
+      if (custom || value > 0) {
+        return {
+          value: value,
+          source: custom ? 'PERSONALIZZATO' : (meta[i][3] || 'STANDARD')
+        };
+      }
     }
   }
   const standard = resolveRefundStandard_(event);
@@ -42,6 +51,7 @@ function resolveRefundStandard_(event) {
   const type = normalize_(event[APP.CALENDAR_HEADERS.TYPE]);
   const cls = normalize_(event[APP.CALENDAR_HEADERS.CLASS]);
   let best = null;
+
   for (let i = 1; i < rows.length; i++) {
     if (rows[i][3] !== true) continue;
     const rType = normalize_(rows[i][0]);
@@ -49,7 +59,9 @@ function resolveRefundStandard_(event) {
     if (rType !== type && rType !== 'ALTRO') continue;
     if (rClass !== '*' && rClass !== cls) continue;
     const priority = Number(rows[i][4] || 0);
-    if (!best || priority > best.priority) best = { value: Number(rows[i][2] || 0), priority: priority };
+    if (!best || priority > best.priority) {
+      best = { value: Number(rows[i][2] || 0), priority: priority };
+    }
   }
   return best ? best.value : 0;
 }
