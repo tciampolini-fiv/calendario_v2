@@ -50,3 +50,35 @@ function normalize_(value) {
 function samePersonKey_(name, surname) {
   return normalize_(name) + '|' + normalize_(surname);
 }
+
+/**
+ * google.script.run non puo trasferire Date native tra server e browser.
+ * Converte ricorsivamente Date in stringhe ISO e lascia invariati gli altri valori.
+ */
+function clientSafe_(value) {
+  if (value instanceof Date) {
+    return Utilities.formatDate(value, APP.TZ, "yyyy-MM-dd'T'HH:mm:ssXXX");
+  }
+  if (Array.isArray(value)) return value.map(clientSafe_);
+  if (value && typeof value === 'object') {
+    const out = {};
+    Object.keys(value).forEach(k => out[k] = clientSafe_(value[k]));
+    return out;
+  }
+  return value;
+}
+
+/** Converte una data ricevuta dal browser (yyyy-MM-dd o ISO) in Date. */
+function parseClientDate_(value) {
+  if (!value) return null;
+  if (value instanceof Date) return value;
+  const text = String(value).trim();
+  if (!text) return null;
+  const simple = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text);
+  if (simple) {
+    return new Date(Number(simple[1]), Number(simple[2]) - 1, Number(simple[3]), 12, 0, 0, 0);
+  }
+  const d = new Date(text);
+  if (isNaN(d.getTime())) throw new Error('Data non valida: ' + text);
+  return d;
+}
