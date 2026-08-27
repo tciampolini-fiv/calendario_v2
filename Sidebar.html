@@ -3,49 +3,127 @@
 <head>
   <base target="_top">
   <style>
-    body{font-family:Arial,sans-serif;padding:12px;color:#202124}.muted{color:#5f6368}.card{border:1px solid #dadce0;border-radius:8px;padding:10px;margin:8px 0}.row{display:flex;justify-content:space-between;gap:12px}.value{font-weight:600}.late{color:#d93025}.warn{color:#b06000}.ok{color:#188038}.error{background:#fce8e6;color:#b3261e;padding:10px;border-radius:8px;white-space:pre-wrap}button{padding:7px 10px;margin-top:8px}
+    body{font-family:Arial,sans-serif;padding:12px;color:#202124}.muted{color:#5f6368}.card{border:1px solid #dadce0;border-radius:8px;padding:10px;margin:8px 0}.row{display:flex;justify-content:space-between;gap:12px;align-items:center}.value{font-weight:600}.late{color:#d93025}.warn{color:#b06000}.ok{color:#188038}.section-title{font-weight:700;margin-bottom:8px}.task{display:flex;gap:8px;align-items:flex-start;padding:5px 0;border-bottom:1px solid #f1f3f4}.task:last-child{border-bottom:0}.task-main{flex:1}.task-meta{font-size:11px;color:#5f6368}.btn{padding:7px 10px;margin-top:8px;border:1px solid #dadce0;background:white;border-radius:6px;cursor:pointer}.btn-primary{background:#1a73e8;color:white;border-color:#1a73e8}.btn-danger{color:#d93025}.inline{display:flex;gap:6px;align-items:center}.inline input,.inline select{flex:1;min-width:0}input,select,textarea{box-sizing:border-box;width:100%;padding:6px;border:1px solid #dadce0;border-radius:5px}label{font-size:12px;color:#5f6368}.hidden{display:none}.status{padding:8px;background:#f8f9fa;border-radius:6px;margin-bottom:8px}.expense{padding:6px 0;border-bottom:1px solid #f1f3f4}.expense:last-child{border-bottom:0}.small{font-size:12px}.loading{padding:20px 0;text-align:center;color:#5f6368}
   </style>
 </head>
 <body>
-  <div id="app">Caricamento...</div>
+  <div id="app" class="loading">Seleziona una riga del Calendario…</div>
 <script>
-const EVENT_ID = '<?= eventId ?>';
+let currentEventId='';
+let currentRow=null;
+let loading=false;
+
 function money(v){return new Intl.NumberFormat('it-IT',{style:'currency',currency:'EUR'}).format(Number(v||0));}
 function dateFmt(v){if(!v)return ''; const d=new Date(v); return isNaN(d)?String(v):d.toLocaleDateString('it-IT');}
+function isoDate(v){if(!v)return ''; const d=new Date(v); if(isNaN(d)) return ''; return d.toISOString().slice(0,10);}
+function esc(v){return String(v??'').replace(/[&<>"']/g,s=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[s]));}
+function isDone(s){return ['FATTO','COMPLETATA'].includes(String(s||'').toUpperCase());}
+
+function pollSelection(){
+ if(loading) return;
+ loading=true;
+ google.script.run.withSuccessHandler(data=>{
+   loading=false;
+   if(data.state==='NO_EVENT'){
+     currentEventId=''; currentRow=null;
+     document.getElementById('app').innerHTML='<div class="status">'+esc(data.message||'Seleziona una riga evento nel Calendario.')+'</div>';
+     return;
+   }
+   if(data.eventId!==currentEventId || data.row!==currentRow){
+     currentEventId=data.eventId; currentRow=data.row; render(data);
+   }
+ }).withFailureHandler(showError).getCurrentEventPanelData();
+}
+
+function reload(){
+ if(!currentEventId){pollSelection(); return;}
+ google.script.run.withSuccessHandler(render).withFailureHandler(showError).getEventPanelData(currentEventId);
+}
+
 function render(data){
-  try {
-    const e=data.event||{}, c=data.checklist||[], x=data.expenses||[], p=data.participants||[];
-    const done=c.filter(i=>String(i.status).toUpperCase()==='COMPLETATA'||String(i.status).toUpperCase()==='FATTO').length;
-    const actual=x.reduce((s,i)=>s+Number(i.actual||0),0);
-    const refunds=x.filter(i=>String(i.type).toUpperCase()==='RIMBORSO').reduce((s,i)=>s+Number(i.actual||0),0);
-    const refundLimit=(data.refundLimit&&data.refundLimit.value)||0;
-    const refundSource=(data.refundLimit&&data.refundLimit.source)||'STANDARD';
-    document.getElementById('app').innerHTML=`
-      <h2>${e['EVENTO']||e['TIPO']||'Evento'}</h2>
-      <div class="muted">${dateFmt(e['DATA INIZIO'])} - ${dateFmt(e['DATA FINE'])} · ${e["LOCALITA'"]||''}</div>
-      <div class="card"><b>Riepilogo</b><div class="row"><span>Checklist</span><span class="value">${done}/${c.length}</span></div><div class="row"><span>Consuntivo</span><span class="value">${money(actual)}</span></div><div class="row"><span>Partecipanti</span><span class="value">${p.length}</span></div></div>
-      <div class="card"><b>Rimborso atleta</b><div class="row"><span>Massimale</span><span class="value">${money(refundLimit)}</span></div><div class="muted">Fonte: ${refundSource}</div></div>
-      <div class="card"><b>Checklist</b>${c.length?c.slice(0,8).map(i=>`<div>${(String(i.status).toUpperCase()==='COMPLETATA'||String(i.status).toUpperCase()==='FATTO')?'✅':'☐'} ${i.task}${i.dueDate?' · '+dateFmt(i.dueDate):''}</div>`).join(''):'<div class="muted">Nessuna attività ancora generata.</div>'}</div>
-      <div class="card"><b>Spese</b><div class="row"><span>Totale registrato</span><span class="value">${money(actual)}</span></div><div class="row"><span>Rimborsi</span><span class="value">${money(refunds)}</span></div></div>
-    `;
-  } catch(err) {
-    showError(err);
-  }
+ currentEventId=data.eventId||currentEventId; currentRow=data.row||currentRow;
+ const e=data.event||{}, c=data.checklist||[], x=data.expenses||[], p=data.participants||[];
+ const done=c.filter(i=>isDone(i.status)).length;
+ const actual=x.reduce((s,i)=>s+Number(i.actual||0),0);
+ const budget=x.reduce((s,i)=>s+Number(i.budget||0),0);
+ const toPay=x.filter(i=>!['PAGATO','RIMBORSATO'].includes(String(i.status||'').toUpperCase())).reduce((s,i)=>s+Number(i.actual||i.budget||0),0);
+ const refundRows=x.filter(i=>String(i.type||'').toUpperCase()==='RIMBORSO');
+ const refunds=refundRows.reduce((s,i)=>s+Number(i.actual||0),0);
+ const cebOptions=(data.cebOptions||[]).filter(o=>String(o.recordType||'').toUpperCase()!=='RIMBORSO');
+ document.getElementById('app').innerHTML=`
+   <h2>${esc(e['EVENTO']||e['TIPO']||'Evento')}</h2>
+   <div class="muted">${dateFmt(e['DATA INIZIO'])} - ${dateFmt(e['DATA FINE'])} · ${esc(e["LOCALITA'"]||'')}</div>
+
+   <div class="card"><div class="section-title">Riepilogo</div>
+    <div class="row"><span>Checklist</span><span class="value">${done}/${c.length}</span></div>
+    <div class="row"><span>Preventivo</span><span class="value">${money(budget)}</span></div>
+    <div class="row"><span>Consuntivo</span><span class="value">${money(actual)}</span></div>
+    <div class="row"><span>Da saldare</span><span class="value">${money(toPay)}</span></div>
+    <div class="row"><span>Partecipanti</span><span class="value">${p.length}</span></div>
+   </div>
+
+   <div class="card"><div class="section-title">Rimborso atleta</div>
+    <div class="inline"><input id="refundLimit" type="number" step="0.01" value="${Number(data.refundLimit?.value||0)}"><button class="btn" onclick="saveRefundLimit()">Salva</button></div>
+    <div class="muted small">Fonte: ${esc(data.refundLimit?.source||'STANDARD')} <button class="btn" onclick="resetRefundLimit()">Ripristina standard</button></div>
+    <div class="row"><span>Rimborsi registrati</span><span class="value">${money(refunds)}</span></div>
+    <button class="btn" onclick="toggle('refundForm')">+ Registra rimborso</button>
+    <div id="refundForm" class="hidden">
+      <label>Beneficiario</label><input id="refundBeneficiary">
+      <label>Importo</label><input id="refundAmount" type="number" step="0.01">
+      <label>Data</label><input id="refundDate" type="date">
+      <label>Note</label><textarea id="refundNotes" rows="2"></textarea>
+      <button class="btn btn-primary" onclick="saveRefund()">Registra</button>
+    </div>
+    ${refundRows.length?'<div class="small" style="margin-top:8px">'+refundRows.map(r=>`${esc(r.beneficiary||'')} · ${money(r.actual)} · ${dateFmt(r.paidDate)}`).join('<br>')+'</div>':''}
+   </div>
+
+   <div class="card"><div class="section-title">Checklist</div>
+    ${c.length?c.map(i=>`<div class="task"><input type="checkbox" ${isDone(i.status)?'checked':''} onchange="setTask('${esc(i.id)}',this.checked)"><div class="task-main"><div>${esc(i.task)}</div><div class="task-meta">${i.dueDate?dateFmt(i.dueDate):'nessuna scadenza'}${i.priority?' · '+esc(i.priority):''}</div></div><button class="btn btn-danger" onclick="deleteTask('${esc(i.id)}')">×</button></div>`).join(''):'<div class="muted">Nessuna attività ancora generata.</div>'}
+    <button class="btn" onclick="generateChecklist()">Genera standard</button>
+    <button class="btn" onclick="toggle('taskForm')">+ Aggiungi attività</button>
+    <div id="taskForm" class="hidden">
+      <label>Attività</label><input id="taskName">
+      <label>Scadenza</label><input id="taskDue" type="date">
+      <label>Priorità</label><select id="taskPriority"><option>NORMALE</option><option>ALTA</option><option>BASSA</option></select>
+      <label>Note</label><textarea id="taskNote" rows="2"></textarea>
+      <button class="btn btn-primary" onclick="saveTask()">Aggiungi</button>
+    </div>
+   </div>
+
+   <div class="card"><div class="section-title">Spese</div>
+    ${x.filter(i=>String(i.type||'').toUpperCase()!=='RIMBORSO').length?x.filter(i=>String(i.type||'').toUpperCase()!=='RIMBORSO').map(i=>`<div class="expense"><div class="row"><span>${esc(i.description||i.category||'Spesa')}</span><span class="value">${money(i.actual||i.budget)}</span></div><div class="task-meta">${esc(i.ceb||'')} · ${esc(i.status||'')}</div></div>`).join(''):'<div class="muted">Nessuna spesa registrata.</div>'}
+    <button class="btn" onclick="toggle('expenseForm')">+ Aggiungi spesa</button>
+    <div id="expenseForm" class="hidden">
+      <label>Descrizione</label><input id="expenseDescription">
+      <label>Categoria CEB</label><select id="expenseCeb">${cebOptions.map(o=>`<option value="${esc(o.code)}">${esc(o.code+' - '+o.description)}</option>`).join('')}</select>
+      <label>Beneficiario / fornitore</label><input id="expenseBeneficiary">
+      <label>Preventivo</label><input id="expenseBudget" type="number" step="0.01">
+      <label>Effettivo</label><input id="expenseActual" type="number" step="0.01">
+      <label>Scadenza pagamento</label><input id="expenseDue" type="date">
+      <label>Stato</label><select id="expenseStatus"><option>DA DEFINIRE</option><option>DA PAGARE</option><option>PAGATO</option></select>
+      <label>Note</label><textarea id="expenseNotes" rows="2"></textarea>
+      <button class="btn btn-primary" onclick="saveExpense()">Aggiungi</button>
+    </div>
+   </div>
+ `;
 }
-function showError(err){
-  const message=(err&&err.message)?err.message:String(err||'Errore sconosciuto');
-  document.getElementById('app').innerHTML='<div class="error"><b>Errore nel caricamento del pannello</b><br><br>'+message+'</div>';
+
+function toggle(id){document.getElementById(id)?.classList.toggle('hidden');}
+function showError(e){loading=false;document.getElementById('app').innerHTML='<div class="status late"><b>Errore</b><br>'+esc(e?.message||e)+'</div>';}
+function setTask(id,done){google.script.run.withSuccessHandler(render).withFailureHandler(showError).setChecklistItemStatus(id,done);}
+function deleteTask(id){if(confirm('Eliminare questa attività?'))google.script.run.withSuccessHandler(render).withFailureHandler(showError).deleteChecklistItem(id);}
+function saveTask(){google.script.run.withSuccessHandler(render).withFailureHandler(showError).addChecklistItem(currentEventId,document.getElementById('taskName').value,document.getElementById('taskDue').value,document.getElementById('taskPriority').value,document.getElementById('taskNote').value);}
+function generateChecklist(){google.script.run.withSuccessHandler(render).withFailureHandler(showError).generateChecklistForPanel(currentEventId);}
+function saveRefundLimit(){google.script.run.withSuccessHandler(render).withFailureHandler(showError).setEventRefundLimit(currentEventId,document.getElementById('refundLimit').value);}
+function resetRefundLimit(){google.script.run.withSuccessHandler(render).withFailureHandler(showError).resetEventRefundLimit(currentEventId);}
+function saveRefund(){google.script.run.withSuccessHandler(r=>{if(r.warning)alert(r.warning);render(r.data);}).withFailureHandler(showError).registerRefund(currentEventId,document.getElementById('refundBeneficiary').value,document.getElementById('refundAmount').value,document.getElementById('refundDate').value,document.getElementById('refundNotes').value);}
+function saveExpense(){
+ const ceb=document.getElementById('expenseCeb').value;
+ google.script.run.withSuccessHandler(render).withFailureHandler(showError).addExpense(currentEventId,{type:'SPESA',category:'',ceb:ceb,description:document.getElementById('expenseDescription').value,beneficiary:document.getElementById('expenseBeneficiary').value,budget:document.getElementById('expenseBudget').value,actual:document.getElementById('expenseActual').value,dueDate:document.getElementById('expenseDue').value,status:document.getElementById('expenseStatus').value,notes:document.getElementById('expenseNotes').value});
 }
-setTimeout(()=>{
-  const el=document.getElementById('app');
-  if(el && el.textContent.trim()==='Caricamento...') {
-    el.innerHTML='<div class="error"><b>Il pannello non ha ricevuto risposta.</b><br><br>Controlla le esecuzioni Apps Script oppure riprova dopo un nuovo pull.</div>';
-  }
-},12000);
-google.script.run
-  .withSuccessHandler(render)
-  .withFailureHandler(showError)
-  .getEventPanelData(EVENT_ID);
+
+pollSelection();
+setInterval(pollSelection,1200);
 </script>
 </body>
 </html>
