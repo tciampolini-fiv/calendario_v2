@@ -19,8 +19,12 @@ function onEdit(e) {
   const editedCol = e.range.getColumn();
   const row = e.range.getRow();
 
-  // Le note restano sempre leggibili: testo a capo e altezza riga adattata al contenuto.
-  if (editedCol === map[APP.CALENDAR_HEADERS.NOTES]) {
+  // Le colonne testuali principali restano compatte in larghezza e crescono solo in altezza.
+  const autoGrowCols = [
+    map[APP.CALENDAR_HEADERS.EVENT],
+    map[APP.CALENDAR_HEADERS.NOTES]
+  ].filter(Boolean);
+  if (autoGrowCols.includes(editedCol)) {
     e.range.setWrap(true).setVerticalAlignment('top');
     sheet.autoResizeRows(row, e.range.getNumRows());
     return;
