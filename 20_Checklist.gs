@@ -39,8 +39,9 @@ function generateChecklistForEvent_(eventId, event) {
   const cls = normalize_(event[APP.CALENDAR_HEADERS.CLASS]);
   const start = event[APP.CALENDAR_HEADERS.START];
   const end = event[APP.CALENDAR_HEADERS.END];
-  if (!profile || profile === 'NESSUNO') return;
+  if (!profile || profile === 'NESSUNO') return 0;
 
+  let added = 0;
   config.slice(1).forEach((r, idx) => {
     const cfgProfile = normalize_(r[1]);
     const cfgClass = normalize_(r[2]);
@@ -64,7 +65,61 @@ function generateChecklistForEvent_(eventId, event) {
       r[11] || '', '', new Date()
     ]);
     existingKeys.add(normalize_(autoKey));
+    added++;
   });
+  return added;
+}
+
+/**
+ * Una tantum / manutenzione: completa la checklist standard di tutti gli eventi
+ * attivi o futuri, senza duplicare le attività già importate o personalizzate.
+ * Gli eventi chiusi non vengono toccati.
+ */
+function initializeCurrentAndFutureChecklists() {
+  const cal = sh_(APP.SHEETS.CALENDAR);
+  const rows = cal.getDataRange().getValues();
+  if (rows.length < 2) return;
+
+  const headers = rows[0];
+  const idx = {};
+  headers.forEach((h, i) => idx[String(h).trim()] = i);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  let eventsTouched = 0;
+  let tasksAdded = 0;
+
+  for (let i = 1; i < rows.length; i++) {
+    const row = rows[i];
+    const eventId = String(row[idx[APP.CALENDAR_HEADERS.ID]] || '').trim();
+    if (!eventId) continue;
+
+    const status = normalize_(row[idx[APP.CALENDAR_HEADERS.STATUS]]);
+    if (status === 'CHIUSO' || status === 'ANNULLATO') continue;
+
+    const end = row[idx[APP.CALENDAR_HEADERS.END]];
+    if (end instanceof Date) {
+      const endDay = new Date(end);
+      endDay.setHours(0, 0, 0, 0);
+      if (endDay < today && status !== 'IN CORSO') continue;
+    }
+
+    const event = {};
+    headers.forEach((h, c) => event[h] = row[c]);
+    event._row = i + 1;
+    const added = generateChecklistForEvent_(eventId, event);
+    if (added > 0) {
+      eventsTouched++;
+      tasksAdded += added;
+    }
+  }
+
+  SpreadsheetApp.flush();
+  SpreadsheetApp.getUi().alert(
+    'Checklist aggiornate',
+    'Eventi completati/aggiornati: ' + eventsTouched + '\nNuove attività create: ' + tasksAdded,
+    SpreadsheetApp.getUi().ButtonSet.OK
+  );
 }
 
 function setChecklistItemStatus(taskId, completed) {
@@ -76,8 +131,7 @@ function setChecklistItemStatus(taskId, completed) {
     sheet.getRange(i + 1, 7).setValue(completed ? 'FATTO' : 'DA FARE');
     sheet.getRange(i + 1, 12).setValue(completed ? new Date() : '');
     sheet.getRange(i + 1, 13).setValue(new Date());
-    const found = findCalendarEventById_(eventId);
-    if (found) refreshEventSummary_(eventId, found.row);
+    refreshEventSummary_(eventId);
     return getEventPanelData(eventId);
   }
   throw new Error('Attività non trovata.');
@@ -92,8 +146,7 @@ function updateChecklistItem(taskId, dueDate, note) {
     sheet.getRange(i + 1, 6).setValue(parseClientDate_(dueDate) || '');
     sheet.getRange(i + 1, 11).setValue(note || '');
     sheet.getRange(i + 1, 13).setValue(new Date());
-    const found = findCalendarEventById_(eventId);
-    if (found) refreshEventSummary_(eventId, found.row);
+    refreshEventSummary_(eventId);
     return getEventPanelData(eventId);
   }
   throw new Error('Attività non trovata.');
@@ -109,8 +162,7 @@ function addChecklistItem(eventId, task, dueDate, priority, note) {
     'TASK-' + Utilities.getUuid(), eventId, maxOrder + 10, task, 'PERSONALIZZATA',
     parseClientDate_(dueDate) || '', 'DA FARE', priority || 'NORMALE', 'PERSONALIZZATA', '', note || '', '', new Date()
   ]);
-  const found = findCalendarEventById_(eventId);
-  if (found) refreshEventSummary_(eventId, found.row);
+  refreshEventSummary_(eventId);
   return getEventPanelData(eventId);
 }
 
@@ -121,8 +173,7 @@ function deleteChecklistItem(taskId) {
     if (String(rows[i][0]) !== String(taskId)) continue;
     const eventId = rows[i][1];
     sheet.deleteRow(i + 1);
-    const found = findCalendarEventById_(eventId);
-    if (found) refreshEventSummary_(eventId, found.row);
+    refreshEventSummary_(eventId);
     return getEventPanelData(eventId);
   }
   throw new Error('Attività non trovata.');
@@ -140,6 +191,7 @@ function syncAutoChecklistTask_(eventId, autoKey, task, dueDate, shouldBeOpen, n
     sheet.getRange(i + 1, 11).setValue(note || '');
     sheet.getRange(i + 1, 12).setValue(shouldBeOpen ? '' : new Date());
     sheet.getRange(i + 1, 13).setValue(new Date());
+    refreshEventSummary_(eventId);
     return;
   }
   if (!shouldBeOpen) return;
@@ -149,35 +201,18 @@ function syncAutoChecklistTask_(eventId, autoKey, task, dueDate, shouldBeOpen, n
     'TASK-' + Utilities.getUuid(), eventId, maxOrder + 10, task, 'AMMINISTRAZIONE', dueDate || '',
     'DA FARE', 'ALTA', 'AUTO', autoKey, note || '', '', new Date()
   ]);
+  refreshEventSummary_(eventId);
 }
 
 function refreshSelectedEventSummary() {
-  const event = selectedEvent_();
-  const id = ensureEventId_(event);
-  refreshEventSummary_(id, event._row);
+  SpreadsheetApp.flush();
 }
 
+/**
+ * I riepiloghi N:P del Calendario sono formule collegate a _CHECKLIST.
+ * Manteniamo questa funzione per compatibilità con il resto del codice,
+ * ma non scriviamo più direttamente nelle celle del calendario.
+ */
 function refreshEventSummary_(eventId, row) {
-  const items = getChecklistForEvent_(eventId);
-  const cal = sh_(APP.SHEETS.CALENDAR);
-  const map = headerMap_(cal);
-  const isDone = x => ['COMPLETATA', 'FATTO'].includes(normalize_(x.status));
-  const done = items.filter(isDone).length;
-  const open = items.filter(x => !isDone(x));
-  const now = new Date();
-  const late = open.filter(x => x.dueDate instanceof Date && x.dueDate < now);
-  let badge = '⚪ ' + done + '/' + items.length;
-  if (items.length && open.length === 0) badge = '🟢 ' + done + '/' + items.length + ' completate';
-  else if (late.length) badge = '🔴 ' + done + '/' + items.length + ' · ' + late.length + ' scadute';
-  else if (open.length) badge = '🟠 ' + done + '/' + items.length + ' · ' + open.length + ' da fare';
-
-  const next = open.sort((a,b) => {
-    const ad = a.dueDate instanceof Date ? a.dueDate.getTime() : 9e15;
-    const bd = b.dueDate instanceof Date ? b.dueDate.getTime() : 9e15;
-    return ad - bd;
-  })[0];
-
-  cal.getRange(row, map[APP.CALENDAR_HEADERS.CHECKLIST]).setValue(badge);
-  cal.getRange(row, map[APP.CALENDAR_HEADERS.NEXT_ACTION]).setValue(next ? next.task : '');
-  cal.getRange(row, map[APP.CALENDAR_HEADERS.DEADLINE]).setValue(next && next.dueDate instanceof Date ? next.dueDate : '');
+  SpreadsheetApp.flush();
 }
