@@ -71,9 +71,9 @@ function generateChecklistForEvent_(eventId, event) {
 }
 
 /**
- * Una tantum / manutenzione: completa la checklist standard di tutti gli eventi
- * attivi o futuri, senza duplicare le attività già importate o personalizzate.
- * Gli eventi chiusi non vengono toccati.
+ * Una tantum / manutenzione: completa la checklist standard degli eventi
+ * in corso o futuri (data fine >= oggi), senza duplicare le attività già
+ * importate o personalizzate. Gli eventi già conclusi non vengono toccati.
  */
 function initializeCurrentAndFutureChecklists() {
   const cal = sh_(APP.SHEETS.CALENDAR);
@@ -94,14 +94,11 @@ function initializeCurrentAndFutureChecklists() {
     const eventId = String(row[idx[APP.CALENDAR_HEADERS.ID]] || '').trim();
     if (!eventId) continue;
 
-    const status = normalize_(row[idx[APP.CALENDAR_HEADERS.STATUS]]);
-    if (status === 'CHIUSO' || status === 'ANNULLATO') continue;
-
     const end = row[idx[APP.CALENDAR_HEADERS.END]];
     if (end instanceof Date) {
       const endDay = new Date(end);
       endDay.setHours(0, 0, 0, 0);
-      if (endDay < today && status !== 'IN CORSO') continue;
+      if (endDay < today) continue;
     }
 
     const event = {};
@@ -209,7 +206,7 @@ function refreshSelectedEventSummary() {
 }
 
 /**
- * I riepiloghi N:P del Calendario sono formule collegate a _CHECKLIST.
+ * I riepiloghi M:O del Calendario sono formule collegate a _CHECKLIST.
  * Manteniamo questa funzione per compatibilità con il resto del codice,
  * ma non scriviamo più direttamente nelle celle del calendario.
  */
