@@ -17,9 +17,17 @@ function onEdit(e) {
   if (sheet.getName() !== APP.SHEETS.CALENDAR || e.range.getRow() < 2) return;
   const map = headerMap_(sheet);
   const editedCol = e.range.getColumn();
+  const row = e.range.getRow();
+
+  // Le note restano sempre leggibili: testo a capo e altezza riga adattata al contenuto.
+  if (editedCol === map[APP.CALENDAR_HEADERS.NOTES]) {
+    e.range.setWrap(true).setVerticalAlignment('top');
+    sheet.autoResizeRows(row, e.range.getNumRows());
+    return;
+  }
+
   if (editedCol !== map[APP.CALENDAR_HEADERS.TYPE] && editedCol !== map[APP.CALENDAR_HEADERS.CLASS]) return;
 
-  const row = e.range.getRow();
   const commitmentCell = sheet.getRange(row, map[APP.CALENDAR_HEADERS.COMMITMENT]);
   if (String(commitmentCell.getDisplayValue() || '').trim()) return;
 
