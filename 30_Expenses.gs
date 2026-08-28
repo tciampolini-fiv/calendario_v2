@@ -173,23 +173,15 @@ function syncExpenseTasks_(expense) {
 
   const receiptOpen = expense.receiptRequested && !expense.receiptSent;
   syncAutoChecklistTask_(eventId, 'CONTABILE:' + expense.id, 'Recuperare e inviare contabile - ' + label, '', receiptOpen, 'Richiedere la contabile all’amministrazione e inoltrarla al fornitore');
-  const found = findCalendarEventById_(eventId);
-  if (found) refreshEventSummary_(eventId, found.row);
+  refreshEventSummary_(eventId);
 }
 
+/**
+ * I riepiloghi Q:S del Calendario sono formule collegate a _SPESE.
+ * Questa funzione resta per compatibilità, ma non sovrascrive più le formule.
+ */
 function refreshExpenseSummary_(eventId) {
-  const found = findCalendarEventById_(eventId);
-  if (!found) return;
-  const items = getExpensesForEvent_(eventId);
-  const budget = items.reduce((s, x) => s + Number(x.budget || 0), 0);
-  const actual = items.reduce((s, x) => s + Number(x.actual || 0), 0);
-  const operationallyDone = x => ['AFOR FATTO','PAGATO CON CC','INVIATO IN AMMINISTRAZIONE','CHIUSO','PAGATO','RIMBORSATO'].includes(normalize_(x.status));
-  const toPay = items.filter(x => !operationallyDone(x)).reduce((s, x) => s + Number(x.actual || x.budget || 0), 0);
-  const cal = sh_(APP.SHEETS.CALENDAR);
-  const map = headerMap_(cal);
-  cal.getRange(found.row, map[APP.CALENDAR_HEADERS.BUDGET]).setValue(budget);
-  cal.getRange(found.row, map[APP.CALENDAR_HEADERS.ACTUAL]).setValue(actual);
-  cal.getRange(found.row, map[APP.CALENDAR_HEADERS.TO_PAY]).setValue(toPay);
+  SpreadsheetApp.flush();
 }
 
 function registerRefund(eventId, beneficiary, amount, paidDate, notes, role) {
