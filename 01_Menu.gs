@@ -4,6 +4,7 @@ function onOpen() {
     .addItem('Apri pannello evento', 'openEventSidebar')
     .addSeparator()
     .addItem('Genera/aggiorna checklist', 'generateChecklistForSelectedEvent')
+    .addItem('Inizializza checklist eventi attivi/futuri', 'initializeCurrentAndFutureChecklists')
     .addItem('Registra rimborso', 'openRefundDialog')
     .addSeparator()
     .addItem('Aggiorna riepiloghi', 'refreshSelectedEventSummary')
