@@ -3,138 +3,38 @@
 <head>
   <base target="_top">
   <style>
-    body{font-family:Arial,sans-serif;padding:12px;color:#202124}.muted{color:#5f6368}.card{border:1px solid #dadce0;border-radius:8px;padding:10px;margin:8px 0}.row{display:flex;justify-content:space-between;gap:12px;align-items:center}.value{font-weight:600}.late{color:#d93025}.warn{color:#b06000}.ok{color:#188038}.section-title{font-weight:700;margin-bottom:8px}.task{display:flex;gap:8px;align-items:flex-start;padding:5px 0;border-bottom:1px solid #f1f3f4}.task:last-child{border-bottom:0}.task-main{flex:1}.task-meta{font-size:11px;color:#5f6368}.btn{padding:7px 10px;margin-top:8px;border:1px solid #dadce0;background:white;border-radius:6px;cursor:pointer}.btn-primary{background:#1a73e8;color:white;border-color:#1a73e8}.btn-danger{color:#d93025}.inline{display:flex;gap:6px;align-items:center}.inline input,.inline select{flex:1;min-width:0}input,select,textarea{box-sizing:border-box;width:100%;padding:6px;border:1px solid #dadce0;border-radius:5px}label{font-size:12px;color:#5f6368}.hidden{display:none}.status{padding:8px;background:#f8f9fa;border-radius:6px;margin-bottom:8px}.expense{padding:6px 0;border-bottom:1px solid #f1f3f4}.expense:last-child{border-bottom:0}.small{font-size:12px}.loading{padding:20px 0;text-align:center;color:#5f6368}
+    body{font-family:Arial,sans-serif;padding:12px;color:#202124}.muted{color:#5f6368}.card{border:1px solid #dadce0;border-radius:8px;padding:10px;margin:8px 0}.row{display:flex;justify-content:space-between;gap:12px;align-items:center}.value{font-weight:600}.late{color:#d93025}.warn{color:#b06000}.ok{color:#188038}.section-title{font-weight:700;margin-bottom:8px}.task{display:flex;gap:7px;align-items:flex-start;padding:6px 0;border-bottom:1px solid #f1f3f4}.task:last-child{border-bottom:0}.task-main{flex:1}.task-meta{font-size:11px;color:#5f6368}.btn{padding:6px 9px;margin-top:7px;border:1px solid #dadce0;background:white;border-radius:6px;cursor:pointer}.btn-primary{background:#1a73e8;color:white;border-color:#1a73e8}.btn-danger{color:#d93025}.btn-small{font-size:11px;padding:3px 6px;margin:0}.inline{display:flex;gap:6px;align-items:center}.inline input,.inline select{flex:1;min-width:0}input,select,textarea{box-sizing:border-box;width:100%;padding:6px;border:1px solid #dadce0;border-radius:5px;margin:2px 0 5px}label{font-size:12px;color:#5f6368}.hidden{display:none}.status{padding:8px;background:#f8f9fa;border-radius:6px;margin-bottom:8px}.expense{padding:7px 0;border-bottom:1px solid #f1f3f4}.expense:last-child{border-bottom:0}.small{font-size:12px}.loading{padding:20px 0;text-align:center;color:#5f6368}.flag{font-size:11px;padding:2px 5px;border-radius:10px;background:#f1f3f4;display:inline-block;margin:2px 2px 0 0}.flag.warn{background:#fef7e0}.flag.ok{background:#e6f4ea}.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px}.checkline{display:flex;align-items:center;gap:6px;margin:5px 0}.checkline input{width:auto;margin:0}
   </style>
 </head>
 <body>
-  <div id="app" class="loading">Seleziona una riga del Calendario…</div>
+<div id="app" class="loading">Seleziona una riga del Calendario…</div>
 <script>
-let currentEventId='';
-let currentRow=null;
-let checking=false;
-let detailLoading=false;
-
+let currentEventId='',currentRow=null,checking=false,detailLoading=false,currentExpenses=[];
 function money(v){return new Intl.NumberFormat('it-IT',{style:'currency',currency:'EUR'}).format(Number(v||0));}
-function dateFmt(v){if(!v)return ''; const d=new Date(v); return isNaN(d)?String(v):d.toLocaleDateString('it-IT');}
+function dateFmt(v){if(!v)return '';const d=new Date(v);return isNaN(d)?String(v):d.toLocaleDateString('it-IT');}
+function isoDate(v){if(!v)return '';const d=new Date(v);if(isNaN(d))return '';const y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,'0'),day=String(d.getDate()).padStart(2,'0');return `${y}-${m}-${day}`;}
 function esc(v){return String(v??'').replace(/[&<>"']/g,s=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[s]));}
 function isDone(s){return ['FATTO','COMPLETATA'].includes(String(s||'').toUpperCase());}
-
-function pollSelection(){
- if(checking) return;
- checking=true;
- google.script.run.withSuccessHandler(sel=>{
-   checking=false;
-   if(sel.state==='NO_EVENT'){
-     if(currentEventId || currentRow!==null){
-       currentEventId=''; currentRow=null;
-       document.getElementById('app').innerHTML='<div class="status">'+esc(sel.message||'Seleziona una riga evento nel Calendario.')+'</div>';
-     }
-     return;
-   }
-   if(sel.eventId===currentEventId && sel.row===currentRow) return;
-   currentEventId=sel.eventId;
-   currentRow=sel.row;
-   loadEvent(sel.eventId);
- }).withFailureHandler(showError).getCurrentEventSelection();
-}
-
-function loadEvent(eventId){
- if(detailLoading) return;
- detailLoading=true;
- document.getElementById('app').innerHTML='<div class="loading">Caricamento evento…</div>';
- google.script.run.withSuccessHandler(data=>{
-   detailLoading=false;
-   if(data.eventId!==currentEventId) return;
-   render(data);
- }).withFailureHandler(showError).getEventPanelData(eventId);
-}
-
-function reload(){ if(currentEventId) loadEvent(currentEventId); else pollSelection(); }
-
+function operationallyDone(s){return ['AFOR FATTO','PAGATO CON CC','INVIATO IN AMMINISTRAZIONE','CHIUSO','PAGATO','RIMBORSATO'].includes(String(s||'').toUpperCase());}
+function pollSelection(){if(checking)return;checking=true;google.script.run.withSuccessHandler(sel=>{checking=false;if(sel.state==='NO_EVENT'){if(currentEventId||currentRow!==null){currentEventId='';currentRow=null;document.getElementById('app').innerHTML='<div class="status">'+esc(sel.message||'Seleziona una riga evento nel Calendario.')+'</div>';}return;}if(sel.eventId===currentEventId&&sel.row===currentRow)return;currentEventId=sel.eventId;currentRow=sel.row;loadEvent(sel.eventId);}).withFailureHandler(showError).getCurrentEventSelection();}
+function loadEvent(id){if(detailLoading)return;detailLoading=true;document.getElementById('app').innerHTML='<div class="loading">Caricamento evento…</div>';google.script.run.withSuccessHandler(data=>{detailLoading=false;if(data.eventId!==currentEventId)return;render(data);}).withFailureHandler(showError).getEventPanelData(id);}
 function render(data){
- currentEventId=data.eventId||currentEventId; currentRow=data.row||currentRow;
- const e=data.event||{}, c=data.checklist||[], x=data.expenses||[], p=data.participants||[];
- const done=c.filter(i=>isDone(i.status)).length;
- const actual=x.reduce((s,i)=>s+Number(i.actual||0),0);
- const budget=x.reduce((s,i)=>s+Number(i.budget||0),0);
- const toPay=x.filter(i=>!['PAGATO','RIMBORSATO'].includes(String(i.status||'').toUpperCase())).reduce((s,i)=>s+Number(i.actual||i.budget||0),0);
- const refundRows=x.filter(i=>String(i.type||'').toUpperCase()==='RIMBORSO');
- const refunds=refundRows.reduce((s,i)=>s+Number(i.actual||0),0);
+ currentEventId=data.eventId||currentEventId;currentRow=data.row||currentRow;const e=data.event||{},c=data.checklist||[],x=data.expenses||[],p=data.participants||[];currentExpenses=x;
+ const done=c.filter(i=>isDone(i.status)).length,actual=x.reduce((s,i)=>s+Number(i.actual||0),0),budget=x.reduce((s,i)=>s+Number(i.budget||0),0),toPay=x.filter(i=>!operationallyDone(i.status)).reduce((s,i)=>s+Number(i.actual||i.budget||0),0);
+ const refundRows=x.filter(i=>String(i.type||'').toUpperCase()==='RIMBORSO'),refunds=refundRows.reduce((s,i)=>s+Number(i.actual||0),0),spese=x.filter(i=>String(i.type||'').toUpperCase()!=='RIMBORSO');
  const cebOptions=(data.cebOptions||[]).filter(o=>String(o.recordType||'').toUpperCase()!=='RIMBORSO');
- document.getElementById('app').innerHTML=`
-   <h2>${esc(e['EVENTO']||e['TIPO']||'Evento')}</h2>
-   <div class="muted">${dateFmt(e['DATA INIZIO'])} - ${dateFmt(e['DATA FINE'])} · ${esc(e["LOCALITA'"]||'')}</div>
-
-   <div class="card"><div class="section-title">Riepilogo</div>
-    <div class="row"><span>Checklist</span><span class="value">${done}/${c.length}</span></div>
-    <div class="row"><span>Preventivo</span><span class="value">${money(budget)}</span></div>
-    <div class="row"><span>Consuntivo</span><span class="value">${money(actual)}</span></div>
-    <div class="row"><span>Da saldare</span><span class="value">${money(toPay)}</span></div>
-    <div class="row"><span>Partecipanti</span><span class="value">${p.length}</span></div>
-   </div>
-
-   <div class="card"><div class="section-title">Rimborso atleta</div>
-    <div class="inline"><input id="refundLimit" type="number" step="0.01" value="${Number(data.refundLimit?.value||0)}"><button class="btn" onclick="saveRefundLimit()">Salva</button></div>
-    <div class="muted small">Fonte: ${esc(data.refundLimit?.source||'STANDARD')} <button class="btn" onclick="resetRefundLimit()">Ripristina standard</button></div>
-    <div class="row"><span>Rimborsi registrati</span><span class="value">${money(refunds)}</span></div>
-    <button class="btn" onclick="toggle('refundForm')">+ Registra rimborso</button>
-    <div id="refundForm" class="hidden">
-      <label>Beneficiario</label><input id="refundBeneficiary">
-      <label>Importo</label><input id="refundAmount" type="number" step="0.01">
-      <label>Data</label><input id="refundDate" type="date">
-      <label>Note</label><textarea id="refundNotes" rows="2"></textarea>
-      <button class="btn btn-primary" onclick="saveRefund()">Registra</button>
-    </div>
-    ${refundRows.length?'<div class="small" style="margin-top:8px">'+refundRows.map(r=>`${esc(r.beneficiary||'')} · ${money(r.actual)} · ${dateFmt(r.paidDate)}`).join('<br>')+'</div>':''}
-   </div>
-
-   <div class="card"><div class="section-title">Checklist</div>
-    ${c.length?c.map(i=>`<div class="task"><input type="checkbox" ${isDone(i.status)?'checked':''} onchange="setTask('${esc(i.id)}',this.checked)"><div class="task-main"><div>${esc(i.task)}</div><div class="task-meta">${i.dueDate?dateFmt(i.dueDate):'nessuna scadenza'}${i.priority?' · '+esc(i.priority):''}</div></div><button class="btn btn-danger" onclick="deleteTask('${esc(i.id)}')">×</button></div>`).join(''):'<div class="muted">Nessuna attività ancora generata.</div>'}
-    <button class="btn" onclick="generateChecklist()">Genera standard</button>
-    <button class="btn" onclick="toggle('taskForm')">+ Aggiungi attività</button>
-    <div id="taskForm" class="hidden">
-      <label>Attività</label><input id="taskName">
-      <label>Scadenza</label><input id="taskDue" type="date">
-      <label>Priorità</label><select id="taskPriority"><option>NORMALE</option><option>ALTA</option><option>BASSA</option></select>
-      <label>Note</label><textarea id="taskNote" rows="2"></textarea>
-      <button class="btn btn-primary" onclick="saveTask()">Aggiungi</button>
-    </div>
-   </div>
-
-   <div class="card"><div class="section-title">Spese</div>
-    ${x.filter(i=>String(i.type||'').toUpperCase()!=='RIMBORSO').length?x.filter(i=>String(i.type||'').toUpperCase()!=='RIMBORSO').map(i=>`<div class="expense"><div class="row"><span>${esc(i.description||i.category||'Spesa')}</span><span class="value">${money(i.actual||i.budget)}</span></div><div class="task-meta">${esc(i.ceb||'')} · ${esc(i.status||'')}</div></div>`).join(''):'<div class="muted">Nessuna spesa registrata.</div>'}
-    <button class="btn" onclick="toggle('expenseForm')">+ Aggiungi spesa</button>
-    <div id="expenseForm" class="hidden">
-      <label>Descrizione</label><input id="expenseDescription">
-      <label>Categoria CEB</label><select id="expenseCeb">${cebOptions.map(o=>`<option value="${esc(o.code)}">${esc(o.code+' - '+o.description)}</option>`).join('')}</select>
-      <label>Beneficiario / fornitore</label><input id="expenseBeneficiary">
-      <label>Preventivo</label><input id="expenseBudget" type="number" step="0.01">
-      <label>Effettivo</label><input id="expenseActual" type="number" step="0.01">
-      <label>Scadenza pagamento</label><input id="expenseDue" type="date">
-      <label>Stato</label><select id="expenseStatus"><option>DA DEFINIRE</option><option>DA PAGARE</option><option>PAGATO</option></select>
-      <label>Note</label><textarea id="expenseNotes" rows="2"></textarea>
-      <button class="btn btn-primary" onclick="saveExpense()">Aggiungi</button>
-    </div>
-   </div>
- `;
+ document.getElementById('app').innerHTML=`<h2>${esc(e['EVENTO']||e['TIPO']||'Evento')}</h2><div class="muted">${dateFmt(e['DATA INIZIO'])} - ${dateFmt(e['DATA FINE'])} · ${esc(e["LOCALITA'"]||'')}</div>
+ <div class="card"><div class="section-title">Riepilogo</div><div class="row"><span>Checklist</span><span class="value">${done}/${c.length}</span></div><div class="row"><span>Preventivo</span><span class="value">${money(budget)}</span></div><div class="row"><span>Consuntivo</span><span class="value">${money(actual)}</span></div><div class="row"><span>Da saldare</span><span class="value">${money(toPay)}</span></div><div class="row"><span>Partecipanti</span><span class="value">${p.length}</span></div></div>
+ <div class="card"><div class="section-title">Rimborsi</div><div class="row"><span>Massimale atleta evento</span><span class="value">${money(data.refundLimit?.value||0)}</span></div><div class="muted small">Tecnici: nessun massimale · Fonte atleta: ${esc(data.refundLimit?.source||'STANDARD')}</div><div class="row"><span>Registrati</span><span class="value">${money(refunds)}</span></div><button class="btn" onclick="toggle('refundForm')">+ Registra rimborso</button><div id="refundForm" class="hidden"><label>Ruolo</label><select id="refundRole"><option>ATLETA</option><option>TECNICO</option><option>ALTRO</option></select><label>Beneficiario</label><input id="refundBeneficiary"><label>Importo</label><input id="refundAmount" type="number" step="0.01"><label>Data</label><input id="refundDate" type="date"><label>Note</label><textarea id="refundNotes" rows="2"></textarea><button class="btn btn-primary" onclick="saveRefund()">Registra</button></div>${refundRows.length?'<div class="small" style="margin-top:8px">'+refundRows.map(r=>`${esc(r.beneficiary||'')} · ${money(r.actual)} · ${dateFmt(r.paidDate)}`).join('<br>')+'</div>':''}</div>
+ <div class="card"><div class="section-title">Checklist</div>${c.length?c.map(i=>`<div class="task"><input type="checkbox" ${isDone(i.status)?'checked':''} onchange="setTask('${esc(i.id)}',this.checked)"><div class="task-main"><div>${esc(i.task)}</div><div class="task-meta">${i.dueDate?dateFmt(i.dueDate):'nessuna scadenza'}${i.priority?' · '+esc(i.priority):''}</div></div><button class="btn btn-small" onclick="editTask('${esc(i.id)}','${esc(isoDate(i.dueDate))}','${esc(i.note||'')}')">✎</button><button class="btn btn-danger btn-small" onclick="deleteTask('${esc(i.id)}')">×</button></div>`).join(''):'<div class="muted">Nessuna attività ancora generata.</div>'}<button class="btn" onclick="generateChecklist()">Genera standard</button><button class="btn" onclick="toggle('taskForm')">+ Aggiungi attività</button><div id="taskForm" class="hidden"><label>Attività</label><input id="taskName"><label>Scadenza</label><input id="taskDue" type="date"><label>Priorità</label><select id="taskPriority"><option>NORMALE</option><option>ALTA</option><option>BASSA</option></select><label>Note</label><textarea id="taskNote" rows="2"></textarea><button class="btn btn-primary" onclick="saveTask()">Aggiungi</button></div></div>
+ <div class="card"><div class="section-title">Spese</div>${spese.length?spese.map(expenseHtml).join(''):'<div class="muted">Nessuna spesa registrata.</div>'}<button class="btn" onclick="toggle('expenseForm')">+ Aggiungi spesa</button><div id="expenseForm" class="hidden"><label>Categoria operativa</label><select id="expenseCategory"><option>VITTO / ALLOGGIO</option><option>VIAGGI</option><option>COMPENSI / RIMBORSI</option><option>NOLEGGI</option><option>ISCRIZIONI</option><option>TRASPORTO</option><option>ALTRO</option></select><label>Descrizione</label><input id="expenseDescription"><label>CEB</label><select id="expenseCeb">${cebOptions.map(o=>`<option value="${esc(o.code)}">${esc(o.code+' - '+o.description)}</option>`).join('')}</select><label>Fornitore / beneficiario</label><input id="expenseBeneficiary"><div class="form-grid"><div><label>Preventivo</label><input id="expenseBudget" type="number" step="0.01"></div><div><label>Effettivo</label><input id="expenseActual" type="number" step="0.01"></div></div><label>Scadenza pagamento</label><input id="expenseDue" type="date"><div class="muted small">Per hotel/alloggio, se vuota, viene proposta automaticamente 7 giorni prima dell’evento.</div><label>Stato</label><select id="expenseStatus"><option>DA DEFINIRE</option><option>DA PAGARE</option><option>AFOR FATTO</option><option>PAGATO CON CC</option><option>INVIATO IN AMMINISTRAZIONE</option><option>CHIUSO</option></select><label>Stato RIF</label><select id="expenseRifStatus"><option>NON NECESSARIO</option><option>DA RICHIEDERE</option><option>IN ATTESA</option><option>RICEVUTO</option></select><label>Codice RIF</label><input id="expenseRifCode"><div class="muted small">Oltre €1.000 il sistema segnala automaticamente il RIF mancante.</div><div class="checkline"><input id="expenseInvoice" type="checkbox"><label for="expenseInvoice">Fattura ricevuta</label></div><div class="checkline"><input id="expenseReceiptRequested" type="checkbox"><label for="expenseReceiptRequested">Il fornitore chiede la contabile</label></div><label>Note</label><textarea id="expenseNotes" rows="2"></textarea><button class="btn btn-primary" onclick="saveExpense()">Aggiungi</button></div></div>`;
 }
-
-function toggle(id){document.getElementById(id)?.classList.toggle('hidden');}
-function showError(e){checking=false;detailLoading=false;document.getElementById('app').innerHTML='<div class="status late"><b>Errore</b><br>'+esc(e?.message||e)+'</div>';}
-function setTask(id,done){google.script.run.withSuccessHandler(render).withFailureHandler(showError).setChecklistItemStatus(id,done);}
-function deleteTask(id){if(confirm('Eliminare questa attività?'))google.script.run.withSuccessHandler(render).withFailureHandler(showError).deleteChecklistItem(id);}
-function saveTask(){google.script.run.withSuccessHandler(render).withFailureHandler(showError).addChecklistItem(currentEventId,document.getElementById('taskName').value,document.getElementById('taskDue').value,document.getElementById('taskPriority').value,document.getElementById('taskNote').value);}
-function generateChecklist(){google.script.run.withSuccessHandler(render).withFailureHandler(showError).generateChecklistForPanel(currentEventId);}
-function saveRefundLimit(){google.script.run.withSuccessHandler(render).withFailureHandler(showError).setEventRefundLimit(currentEventId,document.getElementById('refundLimit').value);}
-function resetRefundLimit(){google.script.run.withSuccessHandler(render).withFailureHandler(showError).resetEventRefundLimit(currentEventId);}
-function saveRefund(){google.script.run.withSuccessHandler(r=>{if(r.warning)alert(r.warning);render(r.data);}).withFailureHandler(showError).registerRefund(currentEventId,document.getElementById('refundBeneficiary').value,document.getElementById('refundAmount').value,document.getElementById('refundDate').value,document.getElementById('refundNotes').value);}
-function saveExpense(){
- const ceb=document.getElementById('expenseCeb').value;
- google.script.run.withSuccessHandler(render).withFailureHandler(showError).addExpense(currentEventId,{type:'SPESA',category:'',ceb:ceb,description:document.getElementById('expenseDescription').value,beneficiary:document.getElementById('expenseBeneficiary').value,budget:document.getElementById('expenseBudget').value,actual:document.getElementById('expenseActual').value,dueDate:document.getElementById('expenseDue').value,status:document.getElementById('expenseStatus').value,notes:document.getElementById('expenseNotes').value});
-}
-
-pollSelection();
-setInterval(pollSelection,700);
+function expenseHtml(i){const flags=[];if(Math.max(Number(i.actual||0),Number(i.budget||0))>1000&&String(i.rifStatus||'').toUpperCase()!=='RICEVUTO')flags.push('<span class="flag warn">RIF '+esc(i.rifStatus||'da richiedere')+'</span>');if(operationallyDone(i.status)&&!i.invoiceReceived)flags.push('<span class="flag warn">fattura mancante</span>');if(i.invoiceReceived)flags.push('<span class="flag ok">fattura ✓</span>');if(i.receiptRequested&&!i.receiptSent)flags.push('<span class="flag warn">contabile da inviare</span>');return `<div class="expense"><div class="row"><span>${esc(i.description||i.category||'Spesa')}</span><span class="value">${money(i.actual||i.budget)}</span></div><div class="task-meta">${esc(i.category||'')} · ${esc(i.ceb||'')} · ${esc(i.status||'')}</div><div>${flags.join('')}</div><button class="btn btn-small" onclick="editExpense('${esc(i.id)}')">Modifica</button></div>`;}
+function toggle(id){document.getElementById(id)?.classList.toggle('hidden');}function showError(e){checking=false;detailLoading=false;document.getElementById('app').innerHTML='<div class="status late"><b>Errore</b><br>'+esc(e?.message||e)+'</div>';}
+function setTask(id,done){google.script.run.withSuccessHandler(render).withFailureHandler(showError).setChecklistItemStatus(id,done);}function deleteTask(id){if(confirm('Eliminare questa attività?'))google.script.run.withSuccessHandler(render).withFailureHandler(showError).deleteChecklistItem(id);}function editTask(id,due,note){const d=prompt('Scadenza (AAAA-MM-GG, vuoto = nessuna):',due||'');if(d===null)return;const n=prompt('Note:',note||'');if(n===null)return;google.script.run.withSuccessHandler(render).withFailureHandler(showError).updateChecklistItem(id,d,n);}function saveTask(){google.script.run.withSuccessHandler(render).withFailureHandler(showError).addChecklistItem(currentEventId,document.getElementById('taskName').value,document.getElementById('taskDue').value,document.getElementById('taskPriority').value,document.getElementById('taskNote').value);}function generateChecklist(){google.script.run.withSuccessHandler(render).withFailureHandler(showError).generateChecklistForPanel(currentEventId);}
+function saveRefund(){google.script.run.withSuccessHandler(r=>{if(r.warning)alert(r.warning);render(r.data);}).withFailureHandler(showError).registerRefund(currentEventId,document.getElementById('refundBeneficiary').value,document.getElementById('refundAmount').value,document.getElementById('refundDate').value,document.getElementById('refundNotes').value,document.getElementById('refundRole').value);}
+function saveExpense(){google.script.run.withSuccessHandler(render).withFailureHandler(showError).addExpense(currentEventId,{type:'SPESA',category:document.getElementById('expenseCategory').value,ceb:document.getElementById('expenseCeb').value,description:document.getElementById('expenseDescription').value,beneficiary:document.getElementById('expenseBeneficiary').value,budget:document.getElementById('expenseBudget').value,actual:document.getElementById('expenseActual').value,dueDate:document.getElementById('expenseDue').value,status:document.getElementById('expenseStatus').value,rifStatus:document.getElementById('expenseRifStatus').value,rifCode:document.getElementById('expenseRifCode').value,invoiceReceived:document.getElementById('expenseInvoice').checked,receiptRequested:document.getElementById('expenseReceiptRequested').checked,notes:document.getElementById('expenseNotes').value});}
+function editExpense(id){const x=currentExpenses.find(e=>String(e.id)===String(id));if(!x)return;const amount=prompt('Importo effettivo:',x.actual||'');if(amount===null)return;const status=prompt('Stato (DA PAGARE / AFOR FATTO / PAGATO CON CC / INVIATO IN AMMINISTRAZIONE / CHIUSO):',x.status||'');if(status===null)return;const due=prompt('Scadenza pagamento AAAA-MM-GG:',isoDate(x.dueDate));if(due===null)return;let rifStatus=x.rifStatus||'NON NECESSARIO',rifCode=x.rifCode||'';if(Math.max(Number(amount||0),Number(x.budget||0))>1000){rifStatus=prompt('Stato RIF (DA RICHIEDERE / IN ATTESA / RICEVUTO):',rifStatus)||rifStatus;rifCode=prompt('Codice RIF:',rifCode);if(rifCode===null)return;}const invoice=confirm('Fattura ricevuta?\nOK = sì, Annulla = no');const receiptRequested=confirm('Il fornitore richiede la contabile?\nOK = sì, Annulla = no');let receiptSent=false;if(receiptRequested)receiptSent=confirm('La contabile è già stata inviata?\nOK = sì, Annulla = no');google.script.run.withSuccessHandler(render).withFailureHandler(showError).updateExpense(id,{actual:amount,status:status,dueDate:due,rifStatus:rifStatus,rifCode:rifCode,invoiceReceived:invoice,receiptRequested:receiptRequested,receiptSent:receiptSent});}
+pollSelection();setInterval(pollSelection,700);
 </script>
-</body>
-</html>
+</body></html>
