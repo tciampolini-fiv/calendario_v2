@@ -10,6 +10,11 @@ function focusPanelEventRow(row, eventId) {
   const currentId = String(sheet.getRange(row, idCol).getDisplayValue() || '').trim();
   if (eventId && currentId !== String(eventId)) return false;
 
+  // Z1 e una cella tecnica del foglio _CONFIG: la formattazione condizionale
+  // del Calendario la usa per mantenere evidenziata la riga aperta nel pannello,
+  // anche se l'utente clicca successivamente in un'altra cella.
+  sh_(APP.SHEETS.CONFIG).getRange('Z1').setValue(currentId);
   sheet.setActiveRange(sheet.getRange(row, 1, 1, sheet.getLastColumn()));
+  SpreadsheetApp.flush();
   return true;
 }
