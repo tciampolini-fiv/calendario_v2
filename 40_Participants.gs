@@ -6,6 +6,45 @@ function getParticipantsForEvent_(eventId) {
   }));
 }
 
+function participantHasRefundOverride_(participant) {
+  return participant && participant.refundLimitOverride !== '' && participant.refundLimitOverride !== null && participant.refundLimitOverride !== undefined;
+}
+
+function saveParticipantRefundOverrides_(eventId, updates) {
+  updates = updates || [];
+  if (!eventId || !updates.length) return;
+
+  const sheet = sh_(APP.SHEETS.PARTICIPANTS);
+  const rows = sheet.getDataRange().getValues();
+  const byId = {};
+  for (let i = 1; i < rows.length; i++) {
+    if (String(rows[i][1]) === String(eventId)) byId[String(rows[i][0])] = i + 1;
+  }
+
+  updates.forEach(u => {
+    const rowNumber = byId[String(u.id || '')];
+    if (!rowNumber) return;
+    if (u.reset === true) {
+      sheet.getRange(rowNumber, 9).clearContent();
+      return;
+    }
+    const value = Number(u.value);
+    if (!isFinite(value) || value < 0) throw new Error('Il rimborso personale deve essere un importo uguale o superiore a zero.');
+    sheet.getRange(rowNumber, 9).setValue(value);
+  });
+}
+
+function getParticipantRefundLimitForBeneficiary_(eventId, event, beneficiary) {
+  const key = normalize_(beneficiary);
+  const participants = getParticipantsForEvent_(eventId);
+  const participant = participants.find(p => normalize_((p.name || '') + ' ' + (p.surname || '')) === key) || null;
+  if (participant && participantHasRefundOverride_(participant)) {
+    return { value: Number(participant.refundLimitOverride || 0), source: 'PERSONALE', participant: participant };
+  }
+  const eventLimit = getEventRefundLimit_(eventId, event);
+  return { value: Number(eventLimit.value || 0), source: eventLimit.source || 'EVENTO', participant: participant };
+}
+
 function findKnownPerson_(name, surname, cardNumber) {
   const rows = sh_(APP.SHEETS.PEOPLE).getDataRange().getValues();
   const card = String(cardNumber || '').trim();
