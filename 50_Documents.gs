@@ -90,12 +90,12 @@ function generateDocumentsForSelectedEvent() {
 
 function generateDocumentsForEvent_(eventId, event, folderId, templateKeys) {
   const folder = DriveApp.getFolderById(folderId);
-  const replacements = buildEventDocumentReplacements_(eventId, event);
   const created = [];
 
   templateKeys.forEach(key => {
     const spec = DOCUMENT_TEMPLATES.find(x => x.key === key);
     if (!spec) return;
+    const replacements = buildEventDocumentReplacements_(eventId, event, spec.key);
     const template = DriveApp.getFileById(spec.id);
     let name = buildGeneratedDocumentName_(spec.key, event, replacements);
     name = uniqueDocumentName_(folder, name);
@@ -108,8 +108,7 @@ function generateDocumentsForEvent_(eventId, event, folderId, templateKeys) {
   return { success:true, folderUrl:folder.getUrl(), created:created };
 }
 
-function buildEventDocumentReplacements_(eventId, event) {
-  const tz = APP.TZ || Session.getScriptTimeZone();
+function buildEventDocumentReplacements_(eventId, event, templateKey) {
   const start = event[APP.CALENDAR_HEADERS.START];
   const end = event[APP.CALENDAR_HEADERS.END];
   const participants = getParticipantsForEvent_(eventId);
@@ -121,20 +120,19 @@ function buildEventDocumentReplacements_(eventId, event) {
   const technicians = String(event[APP.CALENDAR_HEADERS.TECHNICIANS] || '').trim();
   const refund = getEventRefundLimit_(eventId, event);
   const today = new Date();
+  const zone = String(event[APP.CALENDAR_HEADERS.ZONE] || '').trim();
 
   const reps = {
     'tipo': toTitleCaseV2_(event[APP.CALENDAR_HEADERS.TYPE] || ''),
     'classe': String(event[APP.CALENDAR_HEADERS.CLASS] || '').trim(),
     'luogo': String(event[APP.CALENDAR_HEADERS.LOCATION] || '').trim(),
     'localita': String(event[APP.CALENDAR_HEADERS.LOCATION] || '').trim(),
-    'zona': String(event[APP.CALENDAR_HEADERS.ZONE] || '').trim(),
-    'N': String(event[APP.CALENDAR_HEADERS.ZONE] || '').trim(),
+    'zona': zone,
     'circolo': String(event[APP.CALENDAR_HEADERS.CLUB] || '').trim(),
     'tecnico': technicians,
     'lista tecnici': technicians,
     'lista atleti': athleteLines.join('\n'),
     'numero atleti': athletes.length ? String(athletes.length) : '',
-    'n': athletes.length ? String(athletes.length) : '',
     'hotel/struttura': String(event[APP.CALENDAR_HEADERS.LODGING] || '').trim(),
     'data inizio': formatDocumentDate_(start),
     'data fine': formatDocumentDate_(end),
@@ -146,6 +144,12 @@ function buildEventDocumentReplacements_(eventId, event) {
     'rimborso massimo': refund && Number(refund.value || 0) > 0 ? formatDocumentMoney_(refund.value) : '',
     'note evento': String(event[APP.CALENDAR_HEADERS.EVENT] || '').trim()
   };
+
+  // Nei modelli storici {{N}} ha due significati diversi.
+  // La sostituzione va quindi definita per singolo modello.
+  if (templateKey === 'GOMMONE') reps['N'] = zone;
+  if (templateKey === 'OSPITALITA') reps['N'] = athletes.length ? String(athletes.length) : '';
+
   return reps;
 }
 
@@ -154,11 +158,10 @@ function fillGoogleDocPlaceholdersV2_(docId, replacements) {
   const body = doc.getBody();
   Object.keys(replacements).forEach(key => {
     const value = replacements[key];
-    if (value === '' || value === null || value === undefined) return; // lascia il placeholder modificabile se manca il dato
-    body.replaceText('(?i)\\{\\{' + escapeRegexV2_(key) + '\\}\\}', String(value));
+    if (value === '' || value === null || value === undefined) return;
+    body.replaceText('(?i)\\{\\{' + escapeRegexV2_(key) + '\\}\\}', safeDocReplacementV2_(value));
   });
-  // Corregge il refuso storico presente in alcuni template: {classe}}
-  if (replacements.classe) body.replaceText('(?i)\\{classe\\}\\}', String(replacements.classe));
+  if (replacements.classe) body.replaceText('(?i)\\{classe\\}\\}', safeDocReplacementV2_(replacements.classe));
   doc.saveAndClose();
 }
 
@@ -262,4 +265,8 @@ function toTitleCaseV2_(value) {
 
 function escapeRegexV2_(value) {
   return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function safeDocReplacementV2_(value) {
+  return String(value || '').replace(/\\/g, '\\\\').replace(/\$/g, '\\$');
 }
