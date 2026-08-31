@@ -28,10 +28,36 @@ function getCebOptionsForEvent_(event) {
     if (!active) return false;
     const allowed = String(r[2] || '').split(';').map(normalize_).filter(Boolean);
     return allowed.includes('TUTTI') || allowed.includes(type) || allowed.includes(profile);
-  }).map(r => ({ code: r[0], description: r[1], recordType: r[3] || 'SPESA' }));
+  }).map(r => ({
+    code: r[0],
+    description: r[1],
+    recordType: r[3] || 'SPESA',
+    categories: String(r[6] || '').split(';').map(normalize_).filter(Boolean)
+  }));
 }
 
-function resolveExpenseCeb_(event, requestedCeb) {
+function resolveExpenseCebForCategory_(event, category) {
+  const profile = getExpenseProfileForEvent_(event);
+  if (profile === 'FOIL ACADEMY') return 'CEB.033';
+
+  const cat = normalize_(category);
+  const options = getCebOptionsForEvent_(event).filter(o => normalize_(o.recordType) !== 'RIMBORSO');
+  if (!options.length) return '';
+
+  const exact = options.find(o => (o.categories || []).includes(cat));
+  if (exact) return exact.code;
+
+  const generic = options.find(o => (o.categories || []).includes('TUTTI'));
+  if (generic) return generic.code;
+
+  const travel = options.find(o => String(o.code) === 'CEB.001');
+  return travel ? travel.code : options[0].code;
+}
+
+function resolveExpenseCeb_(event, requestedCeb, category, recordType) {
+  const type = normalize_(recordType || 'SPESA');
+  if (type === 'RIMBORSO') return 'CEB.002';
+  if (category) return resolveExpenseCebForCategory_(event, category);
   const profile = getExpenseProfileForEvent_(event);
   if (profile === 'FOIL ACADEMY') return 'CEB.033';
   return requestedCeb || '';
@@ -80,10 +106,12 @@ function addExpense(eventId, payload) {
   const receiptRequested = payload.receiptRequested === true || String(payload.receiptRequested) === 'true';
   const receiptSent = payload.receiptSent === true || String(payload.receiptSent) === 'true';
   const dueDate = defaultPaymentDue_(found.event, payload);
-  const ceb = resolveExpenseCeb_(found.event, payload.ceb);
+  const recordType = payload.type || 'SPESA';
+  const category = payload.category || '';
+  const ceb = resolveExpenseCeb_(found.event, payload.ceb, category, recordType);
 
   sh_(APP.SHEETS.EXPENSES).appendRow([
-    'SPESA-' + Utilities.getUuid(), eventId, payload.type || 'SPESA', payload.category || '', ceb,
+    'SPESA-' + Utilities.getUuid(), eventId, recordType, category, ceb,
     description, payload.beneficiary || '', payload.personId || '', budget, actual, dueDate,
     status, parseClientDate_(payload.paidDate) || '', payload.reference || '', payload.attachment || '',
     payload.notes || '', now, now, rifStatus,
@@ -123,12 +151,14 @@ function updateExpense(expenseId, payload) {
     const receiptRequested = payload.receiptRequested !== undefined ? !!payload.receiptRequested : rows[i][23] === true;
     const receiptSent = payload.receiptSent !== undefined ? !!payload.receiptSent : rows[i][24] === true;
     const dueDate = payload.dueDate !== undefined ? (parseClientDate_(payload.dueDate) || '') : rows[i][10];
+    const category = payload.category !== undefined ? payload.category : rows[i][3];
+    const recordType = payload.type !== undefined ? payload.type : rows[i][2];
     const now = new Date();
 
     const values = [[
-      rows[i][0], eventId, payload.type !== undefined ? payload.type : rows[i][2],
-      payload.category !== undefined ? payload.category : rows[i][3],
-      resolveExpenseCeb_(found.event, payload.ceb !== undefined ? payload.ceb : rows[i][4]),
+      rows[i][0], eventId, recordType,
+      category,
+      resolveExpenseCeb_(found.event, payload.ceb !== undefined ? payload.ceb : rows[i][4], category, recordType),
       payload.description !== undefined ? payload.description : rows[i][5],
       payload.beneficiary !== undefined ? payload.beneficiary : rows[i][6],
       payload.personId !== undefined ? payload.personId : rows[i][7],
@@ -177,7 +207,7 @@ function syncExpenseTasks_(expense) {
 }
 
 /**
- * I riepiloghi Q:S del Calendario sono formule collegate a _SPESE.
+ * I riepiloghi P:R del Calendario sono formule collegate a _SPESE.
  * Questa funzione resta per compatibilità, ma non sovrascrive più le formule.
  */
 function refreshExpenseSummary_(eventId) {
@@ -192,7 +222,9 @@ function registerRefund(eventId, beneficiary, amount, paidDate, notes, role) {
   if (!found) throw new Error('Evento non trovato.');
 
   const situation = getRefundSituation_(eventId, beneficiary);
-  const limitData = getEventRefundLimit_(eventId, found.event);
+  const limitData = role === 'ATLETA'
+    ? getParticipantRefundLimitForBeneficiary_(eventId, found.event, beneficiary)
+    : { value: 0, source: 'SENZA LIMITE' };
   const limit = role === 'ATLETA' ? Number(limitData.value || 0) : 0;
   const projected = situation.total + amount;
   const parsedPaidDate = parseClientDate_(paidDate) || new Date();
@@ -203,9 +235,10 @@ function registerRefund(eventId, beneficiary, amount, paidDate, notes, role) {
     ? 'ATTENZIONE: il totale rimborsato diventerebbe € ' + projected.toFixed(2) + ' rispetto al massimale atleta di € ' + limit.toFixed(2)
     : '';
   const now = new Date();
+  const participant = limitData.participant || null;
   sh_(APP.SHEETS.EXPENSES).appendRow([
     'RIM-' + Utilities.getUuid(), eventId, 'RIMBORSO', 'RIMBORSI ' + role, 'CEB.002',
-    'Rimborso spese ' + role.toLowerCase(), beneficiary, '', 0, amount, '', 'CHIUSO', parsedPaidDate,
+    'Rimborso spese ' + role.toLowerCase(), beneficiary, participant ? participant.personId || '' : '', 0, amount, '', 'CHIUSO', parsedPaidDate,
     '', '', notes || '', now, now, 'NON NECESSARIO', '', '', true, now, false, false, now
   ]);
   refreshExpenseSummary_(eventId);
