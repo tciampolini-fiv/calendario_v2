@@ -3,7 +3,12 @@ function getChecklistForEvent_(eventId) {
   return rows.slice(1).filter(r => String(r[1]) === String(eventId)).map(r => ({
     id: r[0], order: r[2], task: r[3], category: r[4], dueDate: r[5], status: r[6],
     priority: r[7], source: r[8], autoKey: r[9], note: r[10], completedAt: r[11], updatedAt: r[12]
-  })).sort((a,b) => Number(a.order || 0) - Number(b.order || 0));
+  })).sort((a, b) => {
+    const aDue = a.dueDate instanceof Date ? a.dueDate.getTime() : Number.POSITIVE_INFINITY;
+    const bDue = b.dueDate instanceof Date ? b.dueDate.getTime() : Number.POSITIVE_INFINITY;
+    if (aDue !== bDue) return aDue - bDue;
+    return Number(a.order || 0) - Number(b.order || 0);
+  });
 }
 
 function getChecklistProfileForEvent_(event) {
@@ -61,7 +66,7 @@ function generateChecklistForEvent_(eventId, event) {
 
     target.appendRow([
       'TASK-' + Utilities.getUuid(), eventId, Number(r[8] || (idx + 1) * 10), task,
-      r[4] || '', due, 'DA FARE', r[7] || 'NORMALE', 'STANDARD', autoKey,
+      r[4] || '', due, 'DA FARE', '', 'STANDARD', autoKey,
       r[11] || '', '', new Date()
     ]);
     existingKeys.add(normalize_(autoKey));
@@ -157,7 +162,7 @@ function addChecklistItem(eventId, task, dueDate, priority, note) {
   const maxOrder = existing.reduce((m, x) => Math.max(m, Number(x.order || 0)), 0);
   sheet.appendRow([
     'TASK-' + Utilities.getUuid(), eventId, maxOrder + 10, task, 'PERSONALIZZATA',
-    parseClientDate_(dueDate) || '', 'DA FARE', priority || 'NORMALE', 'PERSONALIZZATA', '', note || '', '', new Date()
+    parseClientDate_(dueDate) || '', 'DA FARE', '', 'PERSONALIZZATA', '', note || '', '', new Date()
   ]);
   refreshEventSummary_(eventId);
   return getEventPanelData(eventId);
@@ -196,7 +201,7 @@ function syncAutoChecklistTask_(eventId, autoKey, task, dueDate, shouldBeOpen, n
   const maxOrder = existing.reduce((m, x) => Math.max(m, Number(x.order || 0)), 0);
   sheet.appendRow([
     'TASK-' + Utilities.getUuid(), eventId, maxOrder + 10, task, 'AMMINISTRAZIONE', dueDate || '',
-    'DA FARE', 'ALTA', 'AUTO', autoKey, note || '', '', new Date()
+    'DA FARE', '', 'AUTO', autoKey, note || '', '', new Date()
   ]);
   refreshEventSummary_(eventId);
 }
@@ -206,7 +211,7 @@ function refreshSelectedEventSummary() {
 }
 
 /**
- * I riepiloghi M:O del Calendario sono formule collegate a _CHECKLIST.
+ * I riepiloghi N:O del Calendario sono formule collegate a _CHECKLIST.
  * Manteniamo questa funzione per compatibilità con il resto del codice,
  * ma non scriviamo più direttamente nelle celle del calendario.
  */
