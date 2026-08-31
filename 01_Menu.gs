@@ -3,6 +3,8 @@ function onOpen() {
     .createMenu('Calendario v2')
     .addItem('Apri pannello evento', 'openEventSidebar')
     .addSeparator()
+    .addItem('Crea cartella di lavoro', 'createWorkFolderForSelectedEvent')
+    .addSeparator()
     .addItem('Genera/aggiorna checklist', 'generateChecklistForSelectedEvent')
     .addItem('Inizializza checklist eventi attivi/futuri', 'initializeCurrentAndFutureChecklists')
     .addItem('Registra rimborso', 'openRefundDialog')
