@@ -35,7 +35,6 @@ function getEventShellByRow_(row, expectedEventId) {
     summary: {
       checklist: event[APP.CALENDAR_HEADERS.CHECKLIST] || '',
       nextAction: event[APP.CALENDAR_HEADERS.NEXT_ACTION] || '',
-      deadline: event[APP.CALENDAR_HEADERS.DEADLINE] || '',
       budget: event[APP.CALENDAR_HEADERS.BUDGET] || 0,
       actual: event[APP.CALENDAR_HEADERS.ACTUAL] || 0,
       toPay: event[APP.CALENDAR_HEADERS.TO_PAY] || 0
@@ -60,14 +59,19 @@ function getPanelChecklistSection(eventId) {
   return clientSafe_({ checklist: getChecklistForEvent_(eventId) });
 }
 
-function getPanelExpensesSection(eventId, row) {
-  const event = getEventFromPanelRow_(row, eventId);
-  return clientSafe_({
+function buildPanelExpensesSection_(eventId, event) {
+  return {
     expenses: getExpensesForEvent_(eventId),
+    participants: getParticipantsForEvent_(eventId),
     refundLimit: getEventRefundLimit_(eventId, event),
     standardRefundLimit: resolveRefundStandard_(event),
     cebOptions: getCebOptionsForEvent_(event)
-  });
+  };
+}
+
+function getPanelExpensesSection(eventId, row) {
+  const event = getEventFromPanelRow_(row, eventId);
+  return clientSafe_(buildPanelExpensesSection_(eventId, event));
 }
 
 function getPanelParticipantsSection(eventId) {
@@ -86,6 +90,7 @@ function saveEventPanelDraft(payload) {
   try {
     const event = getEventFromPanelRow_(row, eventId);
     saveRefundLimitPanelDraft_(eventId, payload.refundLimitChange);
+    saveParticipantRefundOverrides_(eventId, payload.participantRefundUpdates || []);
     saveChecklistPanelDraft_(eventId, payload.checklistUpdates || [], payload.newChecklist || [], payload.deletedChecklistIds || []);
     saveExpensesPanelDraft_(eventId, event, payload.expenseUpdates || [], payload.newExpenses || [], payload.newRefunds || []);
     SpreadsheetApp.flush();
@@ -96,14 +101,7 @@ function saveEventPanelDraft(payload) {
       shell: getEventShellByRow_(row, eventId)
     };
     if (payload.returnChecklist) result.checklist = getChecklistForEvent_(eventId);
-    if (payload.returnExpenses) {
-      result.expensesSection = {
-        expenses: getExpensesForEvent_(eventId),
-        refundLimit: getEventRefundLimit_(eventId, event),
-        standardRefundLimit: resolveRefundStandard_(event),
-        cebOptions: getCebOptionsForEvent_(event)
-      };
-    }
+    if (payload.returnExpenses) result.expensesSection = buildPanelExpensesSection_(eventId, event);
     return clientSafe_(result);
   } finally {
     lock.releaseLock();
@@ -221,11 +219,13 @@ function saveExpensesPanelDraft_(eventId, event, updates, newExpenses, newRefund
     const receiptRequested = u.receiptRequested !== undefined ? !!u.receiptRequested : old[23] === true;
     const receiptSent = u.receiptSent !== undefined ? !!u.receiptSent : old[24] === true;
     const dueDate = u.dueDate !== undefined ? (parseClientDate_(u.dueDate) || '') : old[10];
+    const category = u.category !== undefined ? u.category : old[3];
+    const recordType = old[2] || 'SPESA';
 
     const updated = [
-      old[0], eventId, old[2],
-      u.category !== undefined ? u.category : old[3],
-      resolveExpenseCeb_(event, u.ceb !== undefined ? u.ceb : old[4]),
+      old[0], eventId, recordType,
+      category,
+      resolveExpenseCeb_(event, old[4], category, recordType),
       u.description !== undefined ? u.description : old[5],
       u.beneficiary !== undefined ? u.beneficiary : old[6], old[7],
       budget, actual, dueDate, status,
@@ -245,7 +245,7 @@ function saveExpensesPanelDraft_(eventId, event, updates, newExpenses, newRefund
   newExpenses.forEach(p => {
     const description = String(p.description || '').trim();
     if (!description) return;
-    const budget = Number(p.budget || 0);
+    const budget = 0;
     const actual = Number(p.actual || 0);
     const rifNeeded = expenseNeedsRif_(budget, actual);
     const rifCode = String(p.rifCode || '').trim();
@@ -255,9 +255,11 @@ function saveExpensesPanelDraft_(eventId, event, updates, newExpenses, newRefund
     const receiptRequested = p.receiptRequested === true;
     const receiptSent = p.receiptSent === true;
     const dueDate = defaultPaymentDue_(event, p);
+    const category = p.category || '';
+    const ceb = resolveExpenseCeb_(event, '', category, 'SPESA');
     const row = [
-      'SPESA-' + Utilities.getUuid(), eventId, 'SPESA', p.category || '', resolveExpenseCeb_(event, p.ceb || ''),
-      description, p.beneficiary || '', '', budget, actual, dueDate, status, '', '', '', p.notes || '', now, now,
+      'SPESA-' + Utilities.getUuid(), eventId, 'SPESA', category, ceb,
+      description, '', '', budget, actual, dueDate, status, '', '', '', p.notes || '', now, now,
       rifStatus, (normalize_(rifStatus) === 'IN ATTESA' || normalize_(rifStatus) === 'RICEVUTO') ? now : '', rifCode,
       invoiceReceived, invoiceReceived ? now : '', receiptRequested, receiptSent,
       normalize_(status) === 'CHIUSO' ? now : ''
@@ -268,7 +270,6 @@ function saveExpensesPanelDraft_(eventId, event, updates, newExpenses, newRefund
 
   const currentRefundRows = rows.slice(1).filter(r => String(r[1]) === String(eventId) && normalize_(r[2]) === 'RIMBORSO');
   const runningRefunds = currentRefundRows.map(expenseObjectFromPanelRow_);
-  const currentLimit = getEventRefundLimit_(eventId, event).value;
 
   newRefunds.forEach(p => {
     const beneficiary = String(p.beneficiary || '').trim();
@@ -282,13 +283,17 @@ function saveExpensesPanelDraft_(eventId, event, updates, newExpenses, newRefund
     }
     const previous = sameBeneficiary.reduce((s, x) => s + Number(x.actual || 0), 0);
     const projected = previous + amount;
-    const limit = role === 'ATLETA' ? Number(currentLimit || 0) : 0;
+    const limitData = role === 'ATLETA'
+      ? getParticipantRefundLimitForBeneficiary_(eventId, event, beneficiary)
+      : { value: 0, participant: null };
+    const limit = role === 'ATLETA' ? Number(limitData.value || 0) : 0;
     if (limit > 0 && projected > limit && p.confirmedOverLimit !== true) {
       throw new Error('Il rimborso di ' + beneficiary + ' supera il massimale atleta. Conferma prima il superamento nel pannello.');
     }
+    const participant = limitData.participant || null;
     const row = [
       'RIM-' + Utilities.getUuid(), eventId, 'RIMBORSO', 'RIMBORSI ' + role, 'CEB.002',
-      'Rimborso spese ' + role.toLowerCase(), beneficiary, '', 0, amount, '', 'CHIUSO', paidDate,
+      'Rimborso spese ' + role.toLowerCase(), beneficiary, participant ? participant.personId || '' : '', 0, amount, '', 'CHIUSO', paidDate,
       '', '', p.notes || '', now, now, 'NON NECESSARIO', '', '', true, now, false, false, now
     ];
     appendRows.push(row);
