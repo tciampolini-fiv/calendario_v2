@@ -19,6 +19,7 @@
     .section{background:#fff;border:1px solid #dadce0;border-radius:10px;margin:8px 0;overflow:hidden}
     .section-head{display:flex;align-items:center;justify-content:space-between;padding:11px 12px;cursor:pointer;font-weight:700}
     .section-body{border-top:1px solid #eee;padding:10px 12px}
+    .subhead{font-weight:700;margin:6px 0 3px}
     .hidden{display:none}
     .muted{color:#5f6368}
     .small{font-size:11px}
@@ -26,8 +27,8 @@
     .btn:disabled{cursor:default;opacity:.42}
     .btn-primary{background:#1a73e8;color:#fff;border-color:#1a73e8}
     .btn-small{padding:3px 6px;font-size:11px}
-    .task,.expense,.person{padding:8px 0;border-bottom:1px solid #eee}
-    .task:last-child,.expense:last-child,.person:last-child{border-bottom:0}
+    .task,.expense,.person,.athlete-refund{padding:8px 0;border-bottom:1px solid #eee}
+    .task:last-child,.expense:last-child,.person:last-child,.athlete-refund:last-child{border-bottom:0}
     .task.task-soon{background:#fef7e0;border-left:4px solid #f9ab00;padding-left:8px;padding-right:5px}
     .task.task-late{background:#fce8e6;border-left:4px solid #d93025;padding-left:8px;padding-right:5px}
     .row{display:flex;gap:6px;align-items:center}
@@ -36,6 +37,7 @@
     label{display:block;font-size:11px;color:#5f6368;margin-top:5px}
     input,select,textarea{width:100%;border:1px solid #dadce0;border-radius:5px;padding:6px;font:inherit}
     input[type=checkbox]{width:auto}
+    input[readonly]{background:#f1f3f4;color:#3c4043}
     textarea.auto-grow{resize:none;overflow:hidden;min-height:34px;line-height:1.35}
     .dirty{font-size:11px;color:#b06000}
     .savebar{position:fixed;left:0;right:0;bottom:0;background:#fff;border-top:1px solid #dadce0;padding:10px 12px;box-shadow:0 -2px 8px rgba(0,0,0,.08);z-index:20}
@@ -44,7 +46,9 @@
     .loading{padding:12px;text-align:center;color:#5f6368}
     .danger{color:#d93025}
     .pill{font-size:10px;background:#f1f3f4;border-radius:10px;padding:2px 6px}
-    .spacer{height:4px}
+    .source-pill{font-size:10px;border-radius:10px;padding:2px 6px;background:#e8f0fe;color:#174ea6;white-space:nowrap}
+    .spacer{height:8px}
+    .ceb-box{font-size:12px;font-weight:700;background:#f1f3f4;border-radius:5px;padding:7px;margin-top:5px}
     .saved-pulse{animation:savedPulse .65s ease}
     .save-pulse{animation:saveButtonPulse .65s ease}
     @keyframes savedPulse{0%{background:#fff;box-shadow:none}35%{background:#e6f4ea;box-shadow:0 0 0 2px #34a853 inset}100%{background:#fff;box-shadow:none}}
@@ -63,19 +67,21 @@
   <div id="saveStatus" class="status muted"></div>
 </div>
 <script>
-let state={shell:null,checklist:null,expenses:null,participants:null,loaded:{checklist:false,expenses:false,participants:false},dirty:false,saving:false,loading:false,draft:{checklistUpdates:{},newChecklist:[],deletedChecklistIds:[],expenseUpdates:{},newExpenses:[],newRefunds:[],refundLimitChange:null}};
+let state={shell:null,checklist:null,expenses:null,participants:null,loaded:{checklist:false,expenses:false,participants:false},dirty:false,saving:false,loading:false,draft:{checklistUpdates:{},newChecklist:[],deletedChecklistIds:[],expenseUpdates:{},newExpenses:[],newRefunds:[],refundLimitChange:null,participantRefundUpdates:{}}};
 
 function esc(v){return String(v??'').replace(/[&<>"']/g,s=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[s]));}
 function money(v){return new Intl.NumberFormat('it-IT',{style:'currency',currency:'EUR'}).format(Number(v||0));}
 function dateFmt(v){if(!v)return '';const d=new Date(v);if(isNaN(d))return String(v);return new Intl.DateTimeFormat('it-IT',{day:'numeric',month:'short'}).format(d).replace(/\./g,'');}
 function iso(v){if(!v)return '';const d=new Date(v);if(isNaN(d))return '';return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
-function done(s){return ['FATTO','COMPLETATA'].includes(String(s||'').toUpperCase());}
+function norm(v){return String(v||'').trim().toUpperCase();}
+function done(s){return ['FATTO','COMPLETATA'].includes(norm(s));}
 function taskDeadlineClass(status,dueDate){if(done(status)||!dueDate)return '';const s=String(dueDate).slice(0,10);const p=s.split('-').map(Number);if(p.length!==3||!p[0]||!p[1]||!p[2])return '';const due=new Date(p[0],p[1]-1,p[2]);const today=new Date();today.setHours(0,0,0,0);const days=Math.round((due-today)/86400000);if(days<0)return 'task-late';if(days<=3)return 'task-soon';return '';}
 function autoGrow(el){if(!el)return;el.style.height='auto';el.style.height=Math.max(34,el.scrollHeight)+'px';}
 function growAllNotes(){requestAnimationFrame(()=>document.querySelectorAll('textarea.auto-grow').forEach(autoGrow));}
 function updateControls(){const save=document.getElementById('saveBtn'),load=document.getElementById('loadBtn');if(save)save.disabled=!state.shell||state.saving||state.loading;if(load)load.disabled=state.saving||state.loading;}
 function markDirty(){state.dirty=true;const b=document.getElementById('saveBtn');if(b)b.classList.remove('save-pulse');document.getElementById('saveStatus').innerHTML='<span class="dirty">Modifiche non salvate</span>';updateControls();}
-function resetDraft(){state.draft={checklistUpdates:{},newChecklist:[],deletedChecklistIds:[],expenseUpdates:{},newExpenses:[],newRefunds:[],refundLimitChange:null};state.dirty=false;document.getElementById('saveStatus').textContent='';updateControls();}
+function emptyDraft(){return {checklistUpdates:{},newChecklist:[],deletedChecklistIds:[],expenseUpdates:{},newExpenses:[],newRefunds:[],refundLimitChange:null,participantRefundUpdates:{}};}
+function resetDraft(){state.draft=emptyDraft();state.dirty=false;document.getElementById('saveStatus').textContent='';updateControls();}
 function showError(e){state.saving=false;state.loading=false;document.getElementById('saveStatus').innerHTML='<span class="danger">'+esc(e?.message||e)+'</span>';updateControls();}
 function focusCurrentRow(){if(!state.shell)return;google.script.run.focusPanelEventRow(state.shell.row,state.shell.eventId);}
 function pulseSaved(){const top=document.querySelector('.top'),btn=document.getElementById('saveBtn');if(top){top.classList.remove('saved-pulse');void top.offsetWidth;top.classList.add('saved-pulse');}btn.classList.remove('save-pulse');void btn.offsetWidth;btn.classList.add('save-pulse');setTimeout(()=>{top?.classList.remove('saved-pulse');btn.classList.remove('save-pulse');},700);}
@@ -89,10 +95,7 @@ function loadSelected(){
   google.script.run.withSuccessHandler(shell=>{
     state.loading=false;
     if(!shell||shell.state!=='EVENT'){
-      state.shell=null;
-      state.checklist=null;
-      state.expenses=null;
-      state.participants=null;
+      state.shell=null;state.checklist=null;state.expenses=null;state.participants=null;
       state.loaded={checklist:false,expenses:false,participants:false};
       resetDraft();
       document.getElementById('app').innerHTML='<div class="top">'+esc(shell?.message||'Seleziona una riga evento nel Calendario.')+'</div>';
@@ -100,19 +103,13 @@ function loadSelected(){
       updateControls();
       return;
     }
-    state.shell=shell;
-    state.checklist=null;
-    state.expenses=null;
-    state.participants=null;
+    state.shell=shell;state.checklist=null;state.expenses=null;state.participants=null;
     state.loaded={checklist:false,expenses:false,participants:false};
-    resetDraft();
-    renderShell();
-    focusCurrentRow();
-    updateControls();
+    resetDraft();renderShell();focusCurrentRow();updateControls();
   }).withFailureHandler(showError).getSelectedEventShell();
 }
 
-function renderShell(){const s=state.shell,e=s.event||{},m=s.summary||{};const title=[e['TIPO'],e['CLASSE']].filter(Boolean).join(' · ')||'Evento';const eventNote=String(e['NOTE EVENTO']||'').trim();document.getElementById('app').innerHTML=`<div class="top"><div class="title">${esc(title)}</div><div class="meta">${dateFmt(e['DATA INIZIO'])} – ${dateFmt(e['DATA FINE'])} · ${esc(e["LOCALITA'"]||'')}</div>${eventNote?`<div class="meta event-note">${esc(eventNote)}</div>`:''}<div class="summary"><div class="metric"><b>${esc(m.checklist||'-')}</b><span>Checklist</span></div><div class="metric"><b>${money(m.budget)}</b><span>Preventivo</span></div><div class="metric"><b>${money(m.toPay)}</b><span>Da saldare</span></div></div></div>${sectionHtml('checklist','Checklist',esc(m.nextAction||'Apri per vedere le attività'))}${sectionHtml('expenses','Spese e rimborsi','Carica solo quando serve')}${sectionHtml('participants','Partecipanti','Carica elenco')}`;}
+function renderShell(){const s=state.shell,e=s.event||{},m=s.summary||{};const title=[e['TIPO'],e['CLASSE']].filter(Boolean).join(' · ')||'Evento';const eventNote=String(e['NOTE EVENTO']||'').trim();document.getElementById('app').innerHTML=`<div class="top"><div class="title">${esc(title)}</div><div class="meta">${dateFmt(e['DATA INIZIO'])} – ${dateFmt(e['DATA FINE'])} · ${esc(e["LOCALITA'"]||'')}</div>${eventNote?`<div class="meta event-note">${esc(eventNote)}</div>`:''}<div class="summary"><div class="metric"><b>${esc(m.checklist||'-')}</b><span>Checklist</span></div><div class="metric"><b>${money(m.actual)}</b><span>Consuntivo</span></div><div class="metric"><b>${money(m.toPay)}</b><span>Da saldare</span></div></div></div>${sectionHtml('checklist','Checklist',esc(m.nextAction||'Apri per vedere le attività'))}${sectionHtml('expenses','Spese e rimborsi','Importi, CEB e rimborsi atleti')}${sectionHtml('participants','Partecipanti','Carica elenco')}`;}
 function sectionHtml(id,title,sub){return `<div class="section"><div class="section-head" onclick="toggleSection('${id}')"><div>${title}<div class="small muted">${sub}</div></div><span>›</span></div><div id="${id}Body" class="section-body hidden"></div></div>`;}
 function toggleSection(id){const body=document.getElementById(id+'Body');if(!body)return;body.classList.toggle('hidden');if(body.classList.contains('hidden')||state.loaded[id])return;body.innerHTML='<div class="loading">Caricamento…</div>';if(id==='checklist')google.script.run.withSuccessHandler(d=>{state.checklist=d.checklist||[];state.loaded.checklist=true;renderChecklist();}).withFailureHandler(showError).getPanelChecklistSection(state.shell.eventId);if(id==='expenses')google.script.run.withSuccessHandler(d=>{state.expenses=d;state.loaded.expenses=true;renderExpenses();}).withFailureHandler(showError).getPanelExpensesSection(state.shell.eventId,state.shell.row);if(id==='participants')google.script.run.withSuccessHandler(d=>{state.participants=d.participants||[];state.loaded.participants=true;renderParticipants();}).withFailureHandler(showError).getPanelParticipantsSection(state.shell.eventId);}
 
@@ -124,19 +121,39 @@ function newTaskHtml(t,i){const urgency=taskDeadlineClass(t.status,t.dueDate);re
 function newTaskChange(i,k,v){state.draft.newChecklist[i][k]=v;markDirty();if(k==='dueDate'||k==='status')renderChecklist();}
 function removeNewTask(i){state.draft.newChecklist.splice(i,1);markDirty();renderChecklist();}
 
-function renderExpenses(){const body=document.getElementById('expensesBody'),d=state.expenses||{},all=d.expenses||[],sp=all.filter(x=>String(x.type).toUpperCase()!=='RIMBORSO'),rf=all.filter(x=>String(x.type).toUpperCase()==='RIMBORSO'),lim=(state.draft.refundLimitChange&&state.draft.refundLimitChange.mode==='SET')?state.draft.refundLimitChange.value:(d.refundLimit?.value||0);body.innerHTML=`<div class="task"><b>Massimale atleta</b><div class="row"><input id="refundLimit" type="number" value="${esc(lim)}" oninput="refundLimitSet(this.value)"><button class="btn btn-small" onclick="refundLimitReset()">Standard</button></div><div class="small muted">Standard: ${money(d.standardRefundLimit||0)} · Tecnici senza limite</div></div><b>Spese</b>${sp.length?sp.map(expenseHtml).join(''):'<div class="small muted">Nessuna spesa registrata.</div>'}${state.draft.newExpenses.map((x,i)=>newExpenseHtml(x,i)).join('')}<button class="btn" onclick="addExpenseDraft()">+ Aggiungi spesa</button><div class="spacer"></div><b>Rimborsi</b>${rf.length?rf.map(r=>`<div class="expense"><div class="row"><span class="grow">${esc(r.beneficiary)}</span><b>${money(r.actual)}</b></div><div class="small muted">${dateFmt(r.paidDate)} · ${esc(r.category||'')}</div></div>`).join(''):'<div class="small muted">Nessun rimborso.</div>'}${state.draft.newRefunds.map((x,i)=>newRefundHtml(x,i)).join('')}<button class="btn" onclick="addRefundDraft()">+ Aggiungi rimborso</button>`;}
-function expenseHtml(x){const u=state.draft.expenseUpdates[x.id]||{};return `<div class="expense"><div class="row"><b class="grow">${esc(x.description||x.category||'Spesa')}</b><span class="pill">${esc(u.status??x.status??'')}</span></div><div class="grid2"><div><label>Effettivo</label><input type="number" step="0.01" value="${esc(u.actual??x.actual??0)}" oninput="expenseChange('${esc(x.id)}','actual',this.value)"></div><div><label>Scadenza</label><input type="date" value="${esc(u.dueDate??iso(x.dueDate))}" oninput="expenseChange('${esc(x.id)}','dueDate',this.value)"></div></div><label>Stato</label><select onchange="expenseChange('${esc(x.id)}','status',this.value)">${['DA DEFINIRE','DA PAGARE','AFOR FATTO','PAGATO CON CC','INVIATO IN AMMINISTRAZIONE','CHIUSO'].map(s=>`<option ${(u.status??x.status)===s?'selected':''}>${s}</option>`).join('')}</select><div class="row"><label class="grow"><input type="checkbox" ${(u.invoiceReceived??x.invoiceReceived)?'checked':''} onchange="expenseChange('${esc(x.id)}','invoiceReceived',this.checked)"> Fattura ricevuta</label><label class="grow"><input type="checkbox" ${(u.receiptRequested??x.receiptRequested)?'checked':''} onchange="expenseChange('${esc(x.id)}','receiptRequested',this.checked)"> Contabile richiesta</label></div></div>`;}
+function expenseCategories(){return ['VITTO / ALLOGGIO','VIAGGI','NOLEGGI','ISCRIZIONI','TRASPORTO','ALTRO'];}
+function cebForCategory(category){const d=state.expenses||{},opts=(d.cebOptions||[]).filter(o=>norm(o.recordType)!=='RIMBORSO'),cat=norm(category);const exact=opts.find(o=>(o.categories||[]).map(norm).includes(cat));if(exact)return exact.code;const generic=opts.find(o=>(o.categories||[]).map(norm).includes('TUTTI'));if(generic)return generic.code;const travel=opts.find(o=>String(o.code)==='CEB.001');return travel?.code||opts[0]?.code||'';}
+function athleteParticipants(){const p=(state.expenses?.participants||[]);return p.filter(x=>!x.role||norm(x.role)==='ATLETA');}
+function refundTotalFor(name){const all=state.expenses?.expenses||[];return all.filter(x=>norm(x.type)==='RIMBORSO'&&norm(x.beneficiary)===norm(name)).reduce((s,x)=>s+Number(x.actual||0),0);}
+function participantDisplayName(p){return ((p.name||'')+' '+(p.surname||'')).trim();}
+function participantOverrideValue(p){const d=state.draft.participantRefundUpdates[p.id];if(d){if(d.reset)return Number(state.expenses?.refundLimit?.value||0);return Number(d.value||0);}const has=p.refundLimitOverride!==''&&p.refundLimitOverride!==null&&p.refundLimitOverride!==undefined;return has?Number(p.refundLimitOverride||0):Number(state.expenses?.refundLimit?.value||0);}
+function participantOverrideSource(p){const d=state.draft.participantRefundUpdates[p.id];if(d)return d.reset?'standard evento':'personalizzato';const has=p.refundLimitOverride!==''&&p.refundLimitOverride!==null&&p.refundLimitOverride!==undefined;return has?'personalizzato':'standard evento';}
+
+function renderExpenses(){
+  const body=document.getElementById('expensesBody'),d=state.expenses||{},all=d.expenses||[],sp=all.filter(x=>norm(x.type)!=='RIMBORSO'),rf=all.filter(x=>norm(x.type)==='RIMBORSO'),athletes=athleteParticipants();
+  const eventLimit=(state.draft.refundLimitChange&&state.draft.refundLimitChange.mode==='SET')?state.draft.refundLimitChange.value:(d.refundLimit?.value||0);
+  const athleteHtml=athletes.length?athletes.map(p=>athleteRefundHtml(p)).join(''):'<div class="small muted">Nessun atleta convocato importato per questo evento.</div>';
+  body.innerHTML=`<div class="subhead">Rimborsi atleti</div><div class="small muted">Standard evento: ${money(eventLimit)}. Puoi ridurre il rimborso del singolo atleta senza cambiare quello degli altri.</div>${athleteHtml}<div class="spacer"></div><div class="subhead">Spese di trasferta</div>${sp.length?sp.map(expenseHtml).join(''):'<div class="small muted">Nessuna spesa registrata.</div>'}${state.draft.newExpenses.map((x,i)=>newExpenseHtml(x,i)).join('')}<button class="btn" onclick="addExpenseDraft()">+ Aggiungi spesa</button><div class="spacer"></div><div class="subhead">Rimborsi registrati</div>${rf.length?rf.map(r=>`<div class="expense"><div class="row"><span class="grow">${esc(r.beneficiary)}</span><b>${money(r.actual)}</b></div><div class="small muted">${dateFmt(r.paidDate)} · ${esc(r.category||'')}</div></div>`).join(''):'<div class="small muted">Nessun rimborso registrato.</div>'}${state.draft.newRefunds.map((x,i)=>newRefundHtml(x,i)).join('')}<button class="btn" onclick="addRefundDraft()">+ Registra rimborso</button>`;
+  growAllNotes();
+}
+function athleteRefundHtml(p){const name=participantDisplayName(p),limit=participantOverrideValue(p),source=participantOverrideSource(p),paid=refundTotalFor(name),residual=limit-paid;return `<div class="athlete-refund"><div class="row"><b class="grow">${esc(name)}</b><span class="source-pill">${esc(source)}</span></div><div class="small muted">${esc(p.club||'')}${paid?` · già rimborsato ${money(paid)}`:''}${limit?` · residuo ${money(residual)}`:''}</div><div class="row"><div class="grow"><label>Rimborso previsto</label><input type="number" min="0" step="0.01" value="${esc(limit)}" oninput="participantRefundChange('${esc(p.id)}',this.value)"></div><button class="btn btn-small" style="margin-top:19px" onclick="participantRefundReset('${esc(p.id)}')">Standard</button></div></div>`;}
+function participantRefundChange(id,v){state.draft.participantRefundUpdates[id]={id:id,value:Number(v||0),reset:false};markDirty();}
+function participantRefundReset(id){state.draft.participantRefundUpdates[id]={id:id,reset:true};markDirty();renderExpenses();}
+
+function expenseHtml(x){const u=state.draft.expenseUpdates[x.id]||{};return `<div class="expense"><div class="row"><b class="grow">${esc(x.description||x.category||'Spesa')}</b><span class="pill">${esc(u.status??x.status??'')}</span></div><div class="small muted">${esc(x.ceb||'')} ${x.notes?'· '+esc(x.notes):''}</div><div class="grid2"><div><label>Effettivo</label><input type="number" step="0.01" value="${esc(u.actual??x.actual??0)}" oninput="expenseChange('${esc(x.id)}','actual',this.value)"></div><div><label>Scadenza</label><input type="date" value="${esc(u.dueDate??iso(x.dueDate))}" oninput="expenseChange('${esc(x.id)}','dueDate',this.value)"></div></div><label>Stato</label><select onchange="expenseChange('${esc(x.id)}','status',this.value)">${['DA DEFINIRE','DA PAGARE','AFOR FATTO','PAGATO CON CC','INVIATO IN AMMINISTRAZIONE','CHIUSO'].map(s=>`<option ${(u.status??x.status)===s?'selected':''}>${s}</option>`).join('')}</select><label>Note</label><textarea class="auto-grow" rows="1" oninput="autoGrow(this);expenseChange('${esc(x.id)}','notes',this.value)">${esc(u.notes??x.notes??'')}</textarea><div class="row"><label class="grow"><input type="checkbox" ${(u.invoiceReceived??x.invoiceReceived)?'checked':''} onchange="expenseChange('${esc(x.id)}','invoiceReceived',this.checked)"> Fattura ricevuta</label><label class="grow"><input type="checkbox" ${(u.receiptRequested??x.receiptRequested)?'checked':''} onchange="expenseChange('${esc(x.id)}','receiptRequested',this.checked)"> Contabile richiesta</label></div></div>`;}
 function expenseChange(id,k,v){state.draft.expenseUpdates[id]=state.draft.expenseUpdates[id]||{id:id};state.draft.expenseUpdates[id][k]=v;markDirty();}
 function refundLimitSet(v){state.draft.refundLimitChange={mode:'SET',value:Number(v||0)};markDirty();}
 function refundLimitReset(){state.draft.refundLimitChange={mode:'RESET'};markDirty();if(state.expenses){state.expenses.refundLimit={value:state.expenses.standardRefundLimit,source:'STANDARD'};}renderExpenses();}
-function addExpenseDraft(){const opts=(state.expenses?.cebOptions||[]).filter(o=>String(o.recordType||'').toUpperCase()!=='RIMBORSO');state.draft.newExpenses.push({description:'',category:'VITTO / ALLOGGIO',ceb:opts[0]?.code||'',beneficiary:'',budget:'',actual:'',dueDate:'',status:'DA DEFINIRE',rifStatus:'NON NECESSARIO',rifCode:'',invoiceReceived:false,receiptRequested:false,notes:''});markDirty();renderExpenses();}
-function newExpenseHtml(x,i){const opts=(state.expenses?.cebOptions||[]).filter(o=>String(o.recordType||'').toUpperCase()!=='RIMBORSO');return `<div class="expense"><label>Descrizione</label><input value="${esc(x.description)}" oninput="newExpenseChange(${i},'description',this.value)"><div class="grid2"><div><label>Categoria</label><select onchange="newExpenseChange(${i},'category',this.value)">${['VITTO / ALLOGGIO','VIAGGI','COMPENSI / RIMBORSI','NOLEGGI','ISCRIZIONI','TRASPORTO','ALTRO'].map(s=>`<option ${x.category===s?'selected':''}>${s}</option>`).join('')}</select></div><div><label>CEB</label><select onchange="newExpenseChange(${i},'ceb',this.value)">${opts.map(o=>`<option value="${esc(o.code)}" ${x.ceb===o.code?'selected':''}>${esc(o.code)}</option>`).join('')}</select></div></div><label>Fornitore</label><input value="${esc(x.beneficiary)}" oninput="newExpenseChange(${i},'beneficiary',this.value)"><div class="grid2"><div><label>Preventivo</label><input type="number" step="0.01" value="${esc(x.budget)}" oninput="newExpenseChange(${i},'budget',this.value)"></div><div><label>Effettivo</label><input type="number" step="0.01" value="${esc(x.actual)}" oninput="newExpenseChange(${i},'actual',this.value)"></div></div><label>Scadenza</label><input type="date" value="${esc(x.dueDate)}" oninput="newExpenseChange(${i},'dueDate',this.value)"><button class="btn btn-small danger" onclick="removeNewExpense(${i})">Rimuovi</button></div>`;}
+function addExpenseDraft(){state.draft.newExpenses.push({description:'',category:'VITTO / ALLOGGIO',actual:'',dueDate:'',status:'DA DEFINIRE',rifStatus:'NON NECESSARIO',rifCode:'',invoiceReceived:false,receiptRequested:false,notes:''});markDirty();renderExpenses();}
+function newExpenseHtml(x,i){const ceb=cebForCategory(x.category);return `<div class="expense"><label>Descrizione</label><input placeholder="es. Hotel, volo tecnico, noleggio gommone" value="${esc(x.description)}" oninput="newExpenseChange(${i},'description',this.value)"><label>Categoria</label><select onchange="newExpenseChange(${i},'category',this.value);renderExpenses()">${expenseCategories().map(s=>`<option ${x.category===s?'selected':''}>${s}</option>`).join('')}</select><label>CEB automatico</label><div class="ceb-box">${esc(ceb||'Da definire')}</div><label>Note</label><textarea class="auto-grow" rows="1" placeholder="Fornitore e altri dettagli" oninput="autoGrow(this);newExpenseChange(${i},'notes',this.value)">${esc(x.notes||'')}</textarea><div class="grid2"><div><label>Importo effettivo</label><input type="number" min="0" step="0.01" value="${esc(x.actual)}" oninput="newExpenseChange(${i},'actual',this.value)"></div><div><label>Scadenza</label><input type="date" value="${esc(x.dueDate)}" oninput="newExpenseChange(${i},'dueDate',this.value)"></div></div><button class="btn btn-small danger" onclick="removeNewExpense(${i})">Rimuovi</button></div>`;}
 function newExpenseChange(i,k,v){state.draft.newExpenses[i][k]=v;markDirty();}
 function removeNewExpense(i){state.draft.newExpenses.splice(i,1);markDirty();renderExpenses();}
-function addRefundDraft(){state.draft.newRefunds.push({role:'ATLETA',beneficiary:'',amount:'',paidDate:'',notes:'',confirmedOverLimit:false});markDirty();renderExpenses();}
-function newRefundHtml(x,i){return `<div class="expense"><div class="grid2"><div><label>Ruolo</label><select onchange="newRefundChange(${i},'role',this.value)"><option ${x.role==='ATLETA'?'selected':''}>ATLETA</option><option ${x.role==='TECNICO'?'selected':''}>TECNICO</option><option ${x.role==='ALTRO'?'selected':''}>ALTRO</option></select></div><div><label>Importo</label><input type="number" step="0.01" value="${esc(x.amount)}" oninput="newRefundChange(${i},'amount',this.value)"></div></div><label>Beneficiario</label><input value="${esc(x.beneficiary)}" oninput="newRefundChange(${i},'beneficiary',this.value)"><label>Data</label><input type="date" value="${esc(x.paidDate)}" oninput="newRefundChange(${i},'paidDate',this.value)"><label><input type="checkbox" ${x.confirmedOverLimit?'checked':''} onchange="newRefundChange(${i},'confirmedOverLimit',this.checked)"> Confermo eventuale superamento massimale</label><button class="btn btn-small danger" onclick="removeNewRefund(${i})">Rimuovi</button></div>`;}
+
+function addRefundDraft(){const athletes=athleteParticipants();state.draft.newRefunds.push({role:'ATLETA',beneficiary:athletes[0]?participantDisplayName(athletes[0]):'',amount:'',paidDate:'',notes:'',confirmedOverLimit:false});markDirty();renderExpenses();}
+function newRefundHtml(x,i){const people=state.expenses?.participants||[];const personField=people.length?`<select onchange="newRefundChange(${i},'beneficiary',this.value)"><option value="">Seleziona…</option>${people.map(p=>{const n=participantDisplayName(p);return `<option value="${esc(n)}" ${x.beneficiary===n?'selected':''}>${esc(n)}</option>`;}).join('')}</select>`:`<input value="${esc(x.beneficiary)}" oninput="newRefundChange(${i},'beneficiary',this.value)">`;return `<div class="expense"><div class="grid2"><div><label>Ruolo</label><select onchange="newRefundChange(${i},'role',this.value)"><option ${x.role==='ATLETA'?'selected':''}>ATLETA</option><option ${x.role==='TECNICO'?'selected':''}>TECNICO</option><option ${x.role==='ALTRO'?'selected':''}>ALTRO</option></select></div><div><label>Importo</label><input type="number" step="0.01" value="${esc(x.amount)}" oninput="newRefundChange(${i},'amount',this.value)"></div></div><label>Beneficiario</label>${personField}<label>Data</label><input type="date" value="${esc(x.paidDate)}" oninput="newRefundChange(${i},'paidDate',this.value)"><label>Note</label><textarea class="auto-grow" rows="1" oninput="autoGrow(this);newRefundChange(${i},'notes',this.value)">${esc(x.notes||'')}</textarea><label><input type="checkbox" ${x.confirmedOverLimit?'checked':''} onchange="newRefundChange(${i},'confirmedOverLimit',this.checked)"> Confermo eventuale superamento massimale</label><button class="btn btn-small danger" onclick="removeNewRefund(${i})">Rimuovi</button></div>`;}
 function newRefundChange(i,k,v){state.draft.newRefunds[i][k]=v;markDirty();}
 function removeNewRefund(i){state.draft.newRefunds.splice(i,1);markDirty();renderExpenses();}
+
 function renderParticipants(){const body=document.getElementById('participantsBody'),p=state.participants||[];body.innerHTML=p.length?p.map(x=>`<div class="person"><b>${esc((x.name||'')+' '+(x.surname||''))}</b><div class="small muted">${esc(x.club||'')} ${x.role?'· '+esc(x.role):''}${x.email?' · '+esc(x.email):''}</div></div>`).join(''):'<div class="small muted">Nessun partecipante importato.</div>';}
 
 function saveAll(){
@@ -144,23 +161,16 @@ function saveAll(){
   if(document.activeElement&&typeof document.activeElement.blur==='function')document.activeElement.blur();
   setTimeout(()=>{
     if(!state.dirty){document.getElementById('saveStatus').textContent='Nessuna modifica da salvare.';updateControls();return;}
-    state.saving=true;
-    updateControls();
-    document.getElementById('saveStatus').textContent='Salvataggio…';
-    const payload={eventId:state.shell.eventId,row:state.shell.row,checklistUpdates:Object.values(state.draft.checklistUpdates),newChecklist:state.draft.newChecklist,deletedChecklistIds:state.draft.deletedChecklistIds,expenseUpdates:Object.values(state.draft.expenseUpdates),newExpenses:state.draft.newExpenses,newRefunds:state.draft.newRefunds,refundLimitChange:state.draft.refundLimitChange,returnChecklist:state.loaded.checklist,returnExpenses:state.loaded.expenses};
+    state.saving=true;updateControls();document.getElementById('saveStatus').textContent='Salvataggio…';
+    const payload={eventId:state.shell.eventId,row:state.shell.row,checklistUpdates:Object.values(state.draft.checklistUpdates),newChecklist:state.draft.newChecklist,deletedChecklistIds:state.draft.deletedChecklistIds,expenseUpdates:Object.values(state.draft.expenseUpdates),newExpenses:state.draft.newExpenses,newRefunds:state.draft.newRefunds,refundLimitChange:state.draft.refundLimitChange,participantRefundUpdates:Object.values(state.draft.participantRefundUpdates),returnChecklist:state.loaded.checklist,returnExpenses:state.loaded.expenses};
     google.script.run.withSuccessHandler(r=>{
-      state.saving=false;
-      state.shell=r.shell||state.shell;
+      state.saving=false;state.shell=r.shell||state.shell;
       if(r.checklist){state.checklist=r.checklist;state.loaded.checklist=true;}
       if(r.expensesSection){state.expenses=r.expensesSection;state.loaded.expenses=true;}
-      resetDraft();
-      renderShell();
+      resetDraft();renderShell();
       if(state.loaded.checklist){document.getElementById('checklistBody').classList.remove('hidden');renderChecklist();}
       if(state.loaded.expenses){document.getElementById('expensesBody').classList.remove('hidden');renderExpenses();}
-      focusCurrentRow();
-      document.getElementById('saveStatus').textContent='Salvato.';
-      updateControls();
-      pulseSaved();
+      focusCurrentRow();document.getElementById('saveStatus').textContent='Salvato.';updateControls();pulseSaved();
     }).withFailureHandler(showError).saveEventPanelDraft(payload);
   },0);
 }
