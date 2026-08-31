@@ -4,6 +4,7 @@ function onOpen() {
     .addItem('Apri pannello evento', 'openEventSidebar')
     .addSeparator()
     .addItem('Crea cartella di lavoro', 'createWorkFolderForSelectedEvent')
+    .addItem('Genera documenti evento', 'generateDocumentsForSelectedEvent')
     .addSeparator()
     .addItem('Genera/aggiorna checklist', 'generateChecklistForSelectedEvent')
     .addItem('Riallinea checklist standard eventi attivi/futuri', 'rebuildCurrentAndFutureStandardChecklists')
@@ -21,7 +22,6 @@ function onEdit(e) {
   const editedCol = e.range.getColumn();
   const row = e.range.getRow();
 
-  // Le colonne testuali principali restano compatte in larghezza e crescono solo in altezza.
   const autoGrowCols = [
     map[APP.CALENDAR_HEADERS.EVENT],
     map[APP.CALENDAR_HEADERS.NOTES]
