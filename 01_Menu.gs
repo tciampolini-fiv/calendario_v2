@@ -6,7 +6,7 @@ function onOpen() {
     .addItem('Crea cartella di lavoro', 'createWorkFolderForSelectedEvent')
     .addSeparator()
     .addItem('Genera/aggiorna checklist', 'generateChecklistForSelectedEvent')
-    .addItem('Inizializza checklist eventi attivi/futuri', 'initializeCurrentAndFutureChecklists')
+    .addItem('Riallinea checklist standard eventi attivi/futuri', 'rebuildCurrentAndFutureStandardChecklists')
     .addItem('Registra rimborso', 'openRefundDialog')
     .addSeparator()
     .addItem('Aggiorna riepiloghi', 'refreshSelectedEventSummary')
