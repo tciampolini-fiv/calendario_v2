@@ -37,7 +37,8 @@ const APP = Object.freeze({
     ACTUAL: 'CONSUNTIVO',
     TO_PAY: 'DA SALDARE',
     FOLDER: 'CARTELLA',
-    NOTES: 'NOTE SPESE'
+    NOTES: 'NOTE SPESE',
+    EVENT_SHEET: 'SCHEDA EVENTO'
   }),
   COLORS: Object.freeze({
     OK: '#188038',
