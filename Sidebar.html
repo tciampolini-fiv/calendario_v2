@@ -49,7 +49,7 @@
 <script>
 let state={shell:null,checklist:null,expenses:null,participants:null,loaded:{checklist:false,expenses:false,participants:false},dirty:false,saving:false,loading:false,draft:{checklistUpdates:{},newChecklist:[],deletedChecklistIds:[],expenseUpdates:{},newExpenses:[],newRefunds:[],refundLimitChange:null,participantRefundUpdates:{}}};
 
-function esc(v){return String(v??'').replace(/[&<>"']/g,s=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[s]));}
+function esc(v){return String(v??'').replace(/[&<>"']/g,s=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot',"'":'&#39;'}[s]));}
 function money(v){return new Intl.NumberFormat('it-IT',{style:'currency',currency:'EUR'}).format(Number(v||0));}
 function dateFmt(v){if(!v)return '';const d=new Date(v);if(isNaN(d))return String(v);return new Intl.DateTimeFormat('it-IT',{day:'numeric',month:'short'}).format(d).replace(/\./g,'');}
 function iso(v){if(!v)return '';const d=new Date(v);if(isNaN(d))return '';return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
@@ -99,8 +99,8 @@ function refundTotalFor(name){const all=state.expenses?.expenses||[];return all.
 function participantDisplayName(p){return ((p.name||'')+' '+(p.surname||'')).trim();}
 function participantOverrideValue(p){const d=state.draft.participantRefundUpdates[p.id];if(d){if(d.reset)return Number(state.expenses?.refundLimit?.value||0);return Number(d.value||0);}const has=p.refundLimitOverride!==''&&p.refundLimitOverride!==null&&p.refundLimitOverride!==undefined;return has?Number(p.refundLimitOverride||0):Number(state.expenses?.refundLimit?.value||0);}
 function participantOverrideSource(p){const d=state.draft.participantRefundUpdates[p.id];if(d)return d.reset?'standard evento':'personalizzato';const has=p.refundLimitOverride!==''&&p.refundLimitOverride!==null&&p.refundLimitOverride!==undefined;return has?'personalizzato':'standard evento';}
-function expenseUiStatus(status){const s=norm(status);if(['AFOR FATTO','PAGAMENTO AFOR','PAGATO - AFOR'].includes(s))return 'PAGATO - AFOR';if(['PAGATO - FATTURA','PAGAMENTO FATTURA'].includes(s))return 'PAGATO - FATTURA';if(['CHIUSO','PAGATO CON CC','INVIATO IN AMMINISTRAZIONE','PAGATO','RIMBORSATO'].includes(s))return 'CHIUSO';return 'DA PAGARE';}
-function paymentOptions(current){const opts=['DA PAGARE','PAGATO - FATTURA','PAGATO - AFOR'];if(current==='CHIUSO')opts.push('CHIUSO');return opts.map(s=>`<option ${current===s?'selected':''} ${s==='CHIUSO'?'disabled':''}>${s}</option>`).join('');}
+function expenseUiStatus(status){const s=norm(status);if(['AFOR FATTO','PAGAMENTO AFOR','PAGATO - AFOR'].includes(s))return 'PAGATO - AFOR';if(['PAGATO - FATTURA','PAGAMENTO FATTURA'].includes(s))return 'PAGATO - FATTURA';if(s==='PAGATO CON CC')return 'PAGATO CON CC';if(['CHIUSO','INVIATO IN AMMINISTRAZIONE','PAGATO','RIMBORSATO'].includes(s))return 'CHIUSO';return 'DA PAGARE';}
+function paymentOptions(current){const opts=['DA PAGARE','PAGATO - FATTURA','PAGATO - AFOR','PAGATO CON CC'];if(current==='CHIUSO')opts.push('CHIUSO');return opts.map(s=>`<option ${current===s?'selected':''} ${s==='CHIUSO'?'disabled':''}>${s}</option>`).join('');}
 
 function renderExpenses(){
   const body=document.getElementById('expensesBody'),d=state.expenses||{},all=d.expenses||[],sp=all.filter(x=>norm(x.type)!=='RIMBORSO'),rf=all.filter(x=>norm(x.type)==='RIMBORSO'),athletes=athleteParticipants();
