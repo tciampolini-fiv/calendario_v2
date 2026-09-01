@@ -43,13 +43,9 @@ function getChecklistRulesForEvent_(event) {
     const active = r[10] === true || normalize_(r[10]) === 'SI';
     if (!active || (cfgProfile !== profile && cfgProfile !== 'TUTTI')) return;
     if (cfgClass && cfgClass !== '*' && cfgClass !== cls) return;
-
     const key = normalize_(r[9] || r[3]);
     if (!key) return;
-    rules[key] = {
-      dependsOn: normalize_(r[12] || ''),
-      unlockDateBase: normalize_(r[13] || '')
-    };
+    rules[key] = { dependsOn: normalize_(r[12] || ''), unlockDateBase: normalize_(r[13] || '') };
   });
   return rules;
 }
@@ -64,14 +60,9 @@ function eventHasEnded_(event, today) {
   return day > endDay;
 }
 
-/**
- * Gestisce gli sblocchi delle checklist STANDARD e della sola checklist AUTO
- * ammessa: richiesta fattura dopo pagamento AFOR.
- */
 function syncChecklistLocksForEvent_(eventId) {
   const found = findCalendarEventById_(eventId);
   if (!found) return;
-
   const event = found.event;
   const rules = getChecklistRulesForEvent_(event);
   const sheet = sh_(APP.SHEETS.CHECKLIST);
@@ -81,12 +72,7 @@ function syncChecklistLocksForEvent_(eventId) {
 
   for (let i = 1; i < rows.length; i++) {
     if (String(rows[i][1]) !== String(eventId)) continue;
-    const item = {
-      row: i + 1,
-      values: rows[i],
-      key: normalize_(rows[i][9] || rows[i][3]),
-      source: normalize_(rows[i][8])
-    };
+    const item = { row: i + 1, values: rows[i], key: normalize_(rows[i][9] || rows[i][3]), source: normalize_(rows[i][8]) };
     eventRows.push(item);
     if (item.key) byKey[item.key] = item;
   }
@@ -99,7 +85,6 @@ function syncChecklistLocksForEvent_(eventId) {
   eventRows.forEach(item => {
     const current = normalize_(item.values[6]);
     if (current === 'FATTO' || current === 'COMPLETATA') return;
-
     let managed = false;
     let blocked = false;
 
@@ -129,10 +114,6 @@ function syncChecklistLocksForEvent_(eventId) {
   if (updates.length) SpreadsheetApp.flush();
 }
 
-/**
- * Corregge gli sblocchi quando si apre il file. Serve soprattutto alle attività
- * legate alla fine dell'evento, che possono diventare disponibili senza un edit.
- */
 function syncAllChecklistLocks_() {
   const rows = sh_(APP.SHEETS.CHECKLIST).getDataRange().getValues();
   const ids = new Set();
@@ -140,9 +121,7 @@ function syncAllChecklistLocks_() {
     const source = normalize_(rows[i][8]);
     const status = normalize_(rows[i][6]);
     if (!rows[i][1] || status === 'FATTO' || status === 'COMPLETATA') continue;
-    if (source === 'STANDARD' || (source === 'AUTO' && normalize_(rows[i][9]).indexOf('FATTURA_AFOR:') === 0)) {
-      ids.add(String(rows[i][1]));
-    }
+    if (source === 'STANDARD' || (source === 'AUTO' && normalize_(rows[i][9]).indexOf('FATTURA_AFOR:') === 0)) ids.add(String(rows[i][1]));
   }
   ids.forEach(syncChecklistLocksForEvent_);
 }
@@ -176,9 +155,7 @@ function generateChecklistForEvent_(eventId, event) {
     const offsetDays = r[6] === '' ? null : Number(r[6] || 0);
     let baseDate = base === 'FINE' ? end : start;
     if (!(baseDate instanceof Date)) baseDate = null;
-    const due = baseDate && offsetDays !== null
-      ? new Date(baseDate.getTime() + offsetDays * 86400000)
-      : '';
+    const due = baseDate && offsetDays !== null ? new Date(baseDate.getTime() + offsetDays * 86400000) : '';
 
     appendRows.push([
       'TASK-' + Utilities.getUuid(), eventId, Number(r[8] || (idx + 1) * 10), task,
@@ -187,9 +164,17 @@ function generateChecklistForEvent_(eventId, event) {
     existingKeys.add(normalize_(autoKey));
   });
 
-  if (appendRows.length) {
-    target.getRange(target.getLastRow() + 1, 1, appendRows.length, 13).setValues(appendRows);
-  }
+  if (appendRows.length) target.getRange(target.getLastRow() + 1, 1, appendRows.length, 13).setValues(appendRows);
   syncChecklistLocksForEvent_(eventId);
   return appendRows.length;
+}
+
+function generateChecklistForSelectedEvent() {
+  const event = selectedEvent_();
+  const eventId = ensureEventId_(event);
+  const added = generateChecklistForEvent_(eventId, event);
+  getExpensesForEvent_(eventId).forEach(syncExpenseTasks_);
+  syncChecklistLocksForEvent_(eventId);
+  SpreadsheetApp.flush();
+  SpreadsheetApp.getUi().alert('Checklist evento', added ? 'Nuove attività create: ' + added : 'La checklist è già aggiornata.', SpreadsheetApp.getUi().ButtonSet.OK);
 }
