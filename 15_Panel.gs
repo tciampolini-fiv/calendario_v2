@@ -93,6 +93,7 @@ function saveEventPanelDraft(payload) {
     saveParticipantRefundOverrides_(eventId, payload.participantRefundUpdates || []);
     saveChecklistPanelDraft_(eventId, payload.checklistUpdates || [], payload.newChecklist || [], payload.deletedChecklistIds || []);
     saveExpensesPanelDraft_(eventId, event, payload.expenseUpdates || [], payload.newExpenses || [], payload.newRefunds || []);
+    syncChecklistLocksForEvent_(eventId);
     SpreadsheetApp.flush();
 
     const result = {
@@ -156,13 +157,12 @@ function saveChecklistPanelDraft_(eventId, updates, newItems, deletedIds) {
     const status = normalize_(u.status) === 'FATTO' ? 'FATTO' : 'DA FARE';
     const completedAt = status === 'FATTO' ? (old[11] || now) : '';
     sheet.getRange(r, 6, 1, 8).setValues([[
-      parseClientDate_(u.dueDate) || '', status, old[7] || 'NORMALE', old[8] || '', old[9] || '',
+      parseClientDate_(u.dueDate) || '', status, old[7] || '', old[8] || '', old[9] || '',
       u.note || '', completedAt, now
     ]]);
   });
 
-  const toDelete = deletedIds.map(id => byId[String(id)]).filter(Boolean).sort((a, b) => b - a);
-  toDelete.forEach(r => sheet.deleteRow(r));
+  deletedIds.map(id => byId[String(id)]).filter(Boolean).sort((a, b) => b - a).forEach(r => sheet.deleteRow(r));
 
   const addRows = [];
   newItems.forEach(item => {
@@ -172,7 +172,7 @@ function saveChecklistPanelDraft_(eventId, updates, newItems, deletedIds) {
     addRows.push([
       'TASK-' + Utilities.getUuid(), eventId, maxOrder, task, 'PERSONALIZZATA',
       parseClientDate_(item.dueDate) || '', normalize_(item.status) === 'FATTO' ? 'FATTO' : 'DA FARE',
-      item.priority || 'NORMALE', 'PERSONALIZZATA', '', item.note || '',
+      '', 'PERSONALIZZATA', '', item.note || '',
       normalize_(item.status) === 'FATTO' ? now : '', now
     ]);
   });
@@ -214,28 +214,28 @@ function saveExpensesPanelDraft_(eventId, event, updates, newExpenses, newRefund
     else if (!rifNeeded) rifStatus = 'NON NECESSARIO';
     else if (!rifStatus || normalize_(rifStatus) === 'NON NECESSARIO') rifStatus = 'DA RICHIEDERE';
 
-    const status = u.status !== undefined ? u.status : old[11];
-    const invoiceReceived = u.invoiceReceived !== undefined ? !!u.invoiceReceived : old[21] === true;
-    const receiptRequested = u.receiptRequested !== undefined ? !!u.receiptRequested : old[23] === true;
-    const receiptSent = u.receiptSent !== undefined ? !!u.receiptSent : old[24] === true;
-    const dueDate = u.dueDate !== undefined ? (parseClientDate_(u.dueDate) || '') : old[10];
+    const payment = normalizeExpensePaymentState_(
+      u.status !== undefined ? u.status : old[11],
+      u.invoiceReceived !== undefined ? !!u.invoiceReceived : old[21] === true
+    );
+    const paidDate = payment.paid ? (old[12] || now) : '';
     const category = u.category !== undefined ? u.category : old[3];
     const recordType = old[2] || 'SPESA';
 
     const updated = [
-      old[0], eventId, recordType,
-      category,
+      old[0], eventId, recordType, category,
       resolveExpenseCeb_(event, old[4], category, recordType),
       u.description !== undefined ? u.description : old[5],
       u.beneficiary !== undefined ? u.beneficiary : old[6], old[7],
-      budget, actual, dueDate, status,
-      old[12], old[13], old[14], u.notes !== undefined ? u.notes : old[15],
+      budget, actual,
+      u.dueDate !== undefined ? (parseClientDate_(u.dueDate) || '') : old[10],
+      payment.status, paidDate, old[13], old[14],
+      u.notes !== undefined ? u.notes : old[15],
       old[16] || now, now, rifStatus,
       (normalize_(rifStatus) === 'IN ATTESA' || normalize_(rifStatus) === 'RICEVUTO') ? (old[19] || now) : '',
-      rifCode, invoiceReceived,
-      invoiceReceived ? (old[22] || now) : '',
-      receiptRequested, receiptSent,
-      normalize_(status) === 'CHIUSO' ? (old[25] || now) : ''
+      rifCode, payment.invoiceReceived,
+      payment.invoiceReceived ? (old[22] || now) : '',
+      false, false, payment.closed ? (old[25] || now) : ''
     ];
     sheet.getRange(r, 1, 1, 26).setValues([updated]);
     changedExpenses.push(expenseObjectFromPanelRow_(updated));
@@ -250,19 +250,15 @@ function saveExpensesPanelDraft_(eventId, event, updates, newExpenses, newRefund
     const rifNeeded = expenseNeedsRif_(budget, actual);
     const rifCode = String(p.rifCode || '').trim();
     const rifStatus = rifCode ? 'RICEVUTO' : (rifNeeded ? (p.rifStatus || 'DA RICHIEDERE') : 'NON NECESSARIO');
-    const status = p.status || 'DA DEFINIRE';
-    const invoiceReceived = p.invoiceReceived === true;
-    const receiptRequested = p.receiptRequested === true;
-    const receiptSent = p.receiptSent === true;
+    const payment = normalizeExpensePaymentState_(p.status || 'DA PAGARE', p.invoiceReceived === true);
     const dueDate = defaultPaymentDue_(event, p);
     const category = p.category || '';
     const ceb = resolveExpenseCeb_(event, '', category, 'SPESA');
     const row = [
       'SPESA-' + Utilities.getUuid(), eventId, 'SPESA', category, ceb,
-      description, '', '', budget, actual, dueDate, status, '', '', '', p.notes || '', now, now,
-      rifStatus, (normalize_(rifStatus) === 'IN ATTESA' || normalize_(rifStatus) === 'RICEVUTO') ? now : '', rifCode,
-      invoiceReceived, invoiceReceived ? now : '', receiptRequested, receiptSent,
-      normalize_(status) === 'CHIUSO' ? now : ''
+      description, '', '', budget, actual, dueDate, payment.status, payment.paid ? now : '', '', '', p.notes || '',
+      now, now, rifStatus, (normalize_(rifStatus) === 'IN ATTESA' || normalize_(rifStatus) === 'RICEVUTO') ? now : '', rifCode,
+      payment.invoiceReceived, payment.invoiceReceived ? now : '', false, false, payment.closed ? now : ''
     ];
     appendRows.push(row);
     changedExpenses.push(expenseObjectFromPanelRow_(row));
@@ -293,8 +289,9 @@ function saveExpensesPanelDraft_(eventId, event, updates, newExpenses, newRefund
     const participant = limitData.participant || null;
     const row = [
       'RIM-' + Utilities.getUuid(), eventId, 'RIMBORSO', 'RIMBORSI ' + role, 'CEB.002',
-      'Rimborso spese ' + role.toLowerCase(), beneficiary, participant ? participant.personId || '' : '', 0, amount, '', 'CHIUSO', paidDate,
-      '', '', p.notes || '', now, now, 'NON NECESSARIO', '', '', true, now, false, false, now
+      'Rimborso spese ' + role.toLowerCase(), beneficiary, participant ? participant.personId || '' : '',
+      0, amount, '', 'CHIUSO', paidDate, '', '', p.notes || '', now, now,
+      'NON NECESSARIO', '', '', true, now, false, false, now
     ];
     appendRows.push(row);
     runningRefunds.push(expenseObjectFromPanelRow_(row));
