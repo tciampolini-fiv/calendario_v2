@@ -6,10 +6,14 @@ function getChecklistRowsForEventRaw_(eventId) {
   }));
 }
 
+/**
+ * La sidebar mostra solo le attività aperte e realmente eseguibili adesso.
+ * Le attività completate e quelle BLOCCATE restano nel backend ma non vengono mostrate.
+ */
 function getChecklistForEvent_(eventId) {
   syncChecklistLocksForEvent_(eventId);
   return getChecklistRowsForEventRaw_(eventId)
-    .filter(x => normalize_(x.status) !== 'BLOCCATA')
+    .filter(x => normalize_(x.status) === 'DA FARE')
     .sort((a, b) => {
       const aDue = a.dueDate instanceof Date ? a.dueDate.getTime() : Number.POSITIVE_INFINITY;
       const bDue = b.dueDate instanceof Date ? b.dueDate.getTime() : Number.POSITIVE_INFINITY;
@@ -32,12 +36,14 @@ function getChecklistRulesForEvent_(event) {
   const profile = getChecklistProfileForEvent_(event);
   const cls = normalize_(event[APP.CALENDAR_HEADERS.CLASS]);
   const rules = {};
+
   config.slice(1).forEach(r => {
     const cfgProfile = normalize_(r[1]);
     const cfgClass = normalize_(r[2]);
     const active = r[10] === true || normalize_(r[10]) === 'SI';
     if (!active || (cfgProfile !== profile && cfgProfile !== 'TUTTI')) return;
     if (cfgClass && cfgClass !== '*' && cfgClass !== cls) return;
+
     const key = normalize_(r[9] || r[3]);
     if (!key) return;
     rules[key] = {
@@ -48,9 +54,24 @@ function getChecklistRulesForEvent_(event) {
   return rules;
 }
 
+function eventHasEnded_(event, today) {
+  const end = event && event[APP.CALENDAR_HEADERS.END];
+  if (!(end instanceof Date)) return false;
+  const endDay = new Date(end);
+  endDay.setHours(0, 0, 0, 0);
+  const day = today instanceof Date ? new Date(today) : new Date();
+  day.setHours(0, 0, 0, 0);
+  return day > endDay;
+}
+
+/**
+ * Gestisce gli sblocchi delle checklist STANDARD e della sola checklist AUTO
+ * ammessa: richiesta fattura dopo pagamento AFOR.
+ */
 function syncChecklistLocksForEvent_(eventId) {
   const found = findCalendarEventById_(eventId);
   if (!found) return;
+
   const event = found.event;
   const rules = getChecklistRulesForEvent_(event);
   const sheet = sh_(APP.SHEETS.CHECKLIST);
@@ -60,96 +81,86 @@ function syncChecklistLocksForEvent_(eventId) {
 
   for (let i = 1; i < rows.length; i++) {
     if (String(rows[i][1]) !== String(eventId)) continue;
-    const item = { row: i + 1, values: rows[i], key: normalize_(rows[i][9] || rows[i][3]) };
+    const item = {
+      row: i + 1,
+      values: rows[i],
+      key: normalize_(rows[i][9] || rows[i][3]),
+      source: normalize_(rows[i][8])
+    };
     eventRows.push(item);
     if (item.key) byKey[item.key] = item;
   }
 
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  let changed = false;
+  const ended = eventHasEnded_(event, today);
+  const updates = [];
 
   eventRows.forEach(item => {
-    if (normalize_(item.values[8]) !== 'STANDARD') return;
-    const currentStatus = normalize_(item.values[6]);
-    if (currentStatus === 'FATTO' || currentStatus === 'COMPLETATA') return;
-    const rule = rules[item.key] || {};
+    const current = normalize_(item.values[6]);
+    if (current === 'FATTO' || current === 'COMPLETATA') return;
+
+    let managed = false;
     let blocked = false;
 
-    if (rule.dependsOn) {
-      const previous = byKey[rule.dependsOn];
-      const previousStatus = previous ? normalize_(previous.values[6]) : '';
-      if (previousStatus !== 'FATTO' && previousStatus !== 'COMPLETATA') blocked = true;
-    }
-
-    if (!blocked && rule.unlockDateBase === 'FINE') {
-      const end = event[APP.CALENDAR_HEADERS.END];
-      if (end instanceof Date) {
-        const endDay = new Date(end);
-        endDay.setHours(0, 0, 0, 0);
-        if (today <= endDay) blocked = true;
+    if (item.source === 'STANDARD') {
+      managed = true;
+      const rule = rules[item.key] || {};
+      if (rule.dependsOn) {
+        const previous = byKey[rule.dependsOn];
+        const previousStatus = previous ? normalize_(previous.values[6]) : '';
+        if (previousStatus !== 'FATTO' && previousStatus !== 'COMPLETATA') blocked = true;
       }
+      if (!blocked && rule.unlockDateBase === 'FINE' && !ended) blocked = true;
+    } else if (item.source === 'AUTO' && item.key.indexOf('FATTURA_AFOR:') === 0) {
+      managed = true;
+      blocked = !ended;
     }
 
+    if (!managed) return;
     const desired = blocked ? 'BLOCCATA' : 'DA FARE';
-    if (currentStatus !== desired) {
-      sheet.getRange(item.row, 7).setValue(desired);
-      sheet.getRange(item.row, 13).setValue(new Date());
-      item.values[6] = desired;
-      changed = true;
-    }
+    if (current !== desired) updates.push({ row: item.row, status: desired });
   });
-  if (changed) SpreadsheetApp.flush();
+
+  updates.forEach(u => {
+    sheet.getRange(u.row, 7).setValue(u.status);
+    sheet.getRange(u.row, 13).setValue(new Date());
+  });
+  if (updates.length) SpreadsheetApp.flush();
 }
 
-function syncAllCurrentChecklistLocks_() {
-  const cal = sh_(APP.SHEETS.CALENDAR);
-  const rows = cal.getDataRange().getValues();
-  if (rows.length < 2) return;
-  const headers = rows[0];
-  const idx = {};
-  headers.forEach((h, i) => idx[String(h || '').trim()] = i);
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+/**
+ * Corregge gli sblocchi quando si apre il file. Serve soprattutto alle attività
+ * legate alla fine dell'evento, che possono diventare disponibili senza un edit.
+ */
+function syncAllChecklistLocks_() {
+  const rows = sh_(APP.SHEETS.CHECKLIST).getDataRange().getValues();
+  const ids = new Set();
   for (let i = 1; i < rows.length; i++) {
-    const id = String(rows[i][idx[APP.CALENDAR_HEADERS.ID]] || '').trim();
-    if (!id) continue;
-    const end = rows[i][idx[APP.CALENDAR_HEADERS.END]];
-    if (end instanceof Date) {
-      const endDay = new Date(end); endDay.setHours(0,0,0,0);
-      if (endDay < new Date(today.getTime() - 8 * 86400000)) continue;
+    const source = normalize_(rows[i][8]);
+    const status = normalize_(rows[i][6]);
+    if (!rows[i][1] || status === 'FATTO' || status === 'COMPLETATA') continue;
+    if (source === 'STANDARD' || (source === 'AUTO' && normalize_(rows[i][9]).indexOf('FATTURA_AFOR:') === 0)) {
+      ids.add(String(rows[i][1]));
     }
-    syncChecklistLocksForEvent_(id);
   }
-}
-
-function generateChecklistForSelectedEvent() {
-  const event = selectedEvent_();
-  const eventId = ensureEventId_(event);
-  generateChecklistForEvent_(eventId, event);
-  refreshEventSummary_(eventId, event._row);
-}
-
-function generateChecklistForPanel(eventId) {
-  const found = findCalendarEventById_(eventId);
-  if (!found) throw new Error('Evento non trovato.');
-  generateChecklistForEvent_(eventId, found.event);
-  refreshEventSummary_(eventId, found.row);
-  return getEventPanelData(eventId);
+  ids.forEach(syncChecklistLocksForEvent_);
 }
 
 function generateChecklistForEvent_(eventId, event) {
+  const profile = getChecklistProfileForEvent_(event);
+  if (!profile || profile === 'NESSUNO') return 0;
+
   const target = sh_(APP.SHEETS.CHECKLIST);
   const existing = getChecklistRowsForEventRaw_(eventId);
   const existingKeys = new Set(existing.map(x => normalize_(x.autoKey || x.task)));
   const config = sh_(APP.SHEETS.CHECKLIST_CONFIG).getDataRange().getValues();
-  const profile = getChecklistProfileForEvent_(event);
   const cls = normalize_(event[APP.CALENDAR_HEADERS.CLASS]);
   const start = event[APP.CALENDAR_HEADERS.START];
   const end = event[APP.CALENDAR_HEADERS.END];
-  if (!profile || profile === 'NESSUNO') return 0;
+  const now = new Date();
+  const appendRows = [];
 
-  let added = 0;
   config.slice(1).forEach((r, idx) => {
     const cfgProfile = normalize_(r[1]);
     const cfgClass = normalize_(r[2]);
@@ -165,127 +176,20 @@ function generateChecklistForEvent_(eventId, event) {
     const offsetDays = r[6] === '' ? null : Number(r[6] || 0);
     let baseDate = base === 'FINE' ? end : start;
     if (!(baseDate instanceof Date)) baseDate = null;
-    const due = baseDate && offsetDays !== null ? new Date(baseDate.getTime() + offsetDays * 86400000) : '';
+    const due = baseDate && offsetDays !== null
+      ? new Date(baseDate.getTime() + offsetDays * 86400000)
+      : '';
 
-    target.appendRow([
+    appendRows.push([
       'TASK-' + Utilities.getUuid(), eventId, Number(r[8] || (idx + 1) * 10), task,
-      r[4] || '', due, 'DA FARE', '', 'STANDARD', autoKey,
-      r[11] || '', '', new Date()
+      r[4] || '', due, 'DA FARE', '', 'STANDARD', autoKey, r[11] || '', '', now
     ]);
     existingKeys.add(normalize_(autoKey));
-    added++;
   });
+
+  if (appendRows.length) {
+    target.getRange(target.getLastRow() + 1, 1, appendRows.length, 13).setValues(appendRows);
+  }
   syncChecklistLocksForEvent_(eventId);
-  return added;
+  return appendRows.length;
 }
-
-function initializeCurrentAndFutureChecklists() {
-  const cal = sh_(APP.SHEETS.CALENDAR);
-  const rows = cal.getDataRange().getValues();
-  if (rows.length < 2) return;
-  const headers = rows[0];
-  const idx = {};
-  headers.forEach((h, i) => idx[String(h).trim()] = i);
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  let eventsTouched = 0;
-  let tasksAdded = 0;
-  for (let i = 1; i < rows.length; i++) {
-    const row = rows[i];
-    const eventId = String(row[idx[APP.CALENDAR_HEADERS.ID]] || '').trim();
-    if (!eventId) continue;
-    const end = row[idx[APP.CALENDAR_HEADERS.END]];
-    if (end instanceof Date) {
-      const endDay = new Date(end); endDay.setHours(0, 0, 0, 0);
-      if (endDay < today) continue;
-    }
-    const event = {};
-    headers.forEach((h, c) => event[h] = row[c]);
-    event._row = i + 1;
-    const added = generateChecklistForEvent_(eventId, event);
-    if (added > 0) { eventsTouched++; tasksAdded += added; }
-  }
-  SpreadsheetApp.flush();
-  SpreadsheetApp.getUi().alert('Checklist aggiornate','Eventi completati/aggiornati: ' + eventsTouched + '\nNuove attività create: ' + tasksAdded,SpreadsheetApp.getUi().ButtonSet.OK);
-}
-
-function setChecklistItemStatus(taskId, completed) {
-  const sheet = sh_(APP.SHEETS.CHECKLIST);
-  const rows = sheet.getDataRange().getValues();
-  for (let i = 1; i < rows.length; i++) {
-    if (String(rows[i][0]) !== String(taskId)) continue;
-    const eventId = rows[i][1];
-    sheet.getRange(i + 1, 7).setValue(completed ? 'FATTO' : 'DA FARE');
-    sheet.getRange(i + 1, 12).setValue(completed ? new Date() : '');
-    sheet.getRange(i + 1, 13).setValue(new Date());
-    syncChecklistLocksForEvent_(eventId);
-    refreshEventSummary_(eventId);
-    return getEventPanelData(eventId);
-  }
-  throw new Error('Attività non trovata.');
-}
-
-function updateChecklistItem(taskId, dueDate, note) {
-  const sheet = sh_(APP.SHEETS.CHECKLIST);
-  const rows = sheet.getDataRange().getValues();
-  for (let i = 1; i < rows.length; i++) {
-    if (String(rows[i][0]) !== String(taskId)) continue;
-    const eventId = rows[i][1];
-    sheet.getRange(i + 1, 6).setValue(parseClientDate_(dueDate) || '');
-    sheet.getRange(i + 1, 11).setValue(note || '');
-    sheet.getRange(i + 1, 13).setValue(new Date());
-    refreshEventSummary_(eventId);
-    return getEventPanelData(eventId);
-  }
-  throw new Error('Attività non trovata.');
-}
-
-function addChecklistItem(eventId, task, dueDate, priority, note) {
-  task = String(task || '').trim();
-  if (!task) throw new Error('Inserisci il nome dell’attività.');
-  const sheet = sh_(APP.SHEETS.CHECKLIST);
-  const existing = getChecklistRowsForEventRaw_(eventId);
-  const maxOrder = existing.reduce((m, x) => Math.max(m, Number(x.order || 0)), 0);
-  sheet.appendRow(['TASK-' + Utilities.getUuid(), eventId, maxOrder + 10, task, 'PERSONALIZZATA',parseClientDate_(dueDate) || '', 'DA FARE', '', 'PERSONALIZZATA', '', note || '', '', new Date()]);
-  refreshEventSummary_(eventId);
-  return getEventPanelData(eventId);
-}
-
-function deleteChecklistItem(taskId) {
-  const sheet = sh_(APP.SHEETS.CHECKLIST);
-  const rows = sheet.getDataRange().getValues();
-  for (let i = 1; i < rows.length; i++) {
-    if (String(rows[i][0]) !== String(taskId)) continue;
-    const eventId = rows[i][1];
-    sheet.deleteRow(i + 1);
-    syncChecklistLocksForEvent_(eventId);
-    refreshEventSummary_(eventId);
-    return getEventPanelData(eventId);
-  }
-  throw new Error('Attività non trovata.');
-}
-
-function syncAutoChecklistTask_(eventId, autoKey, task, dueDate, shouldBeOpen, note) {
-  const sheet = sh_(APP.SHEETS.CHECKLIST);
-  const rows = sheet.getDataRange().getValues();
-  const key = normalize_(autoKey);
-  for (let i = 1; i < rows.length; i++) {
-    if (String(rows[i][1]) !== String(eventId) || normalize_(rows[i][9]) !== key) continue;
-    sheet.getRange(i + 1, 4).setValue(task);
-    if (dueDate !== undefined) sheet.getRange(i + 1, 6).setValue(dueDate || '');
-    sheet.getRange(i + 1, 7).setValue(shouldBeOpen ? 'DA FARE' : 'FATTO');
-    sheet.getRange(i + 1, 11).setValue(note || '');
-    sheet.getRange(i + 1, 12).setValue(shouldBeOpen ? '' : new Date());
-    sheet.getRange(i + 1, 13).setValue(new Date());
-    refreshEventSummary_(eventId);
-    return;
-  }
-  if (!shouldBeOpen) return;
-  const existing = getChecklistRowsForEventRaw_(eventId);
-  const maxOrder = existing.reduce((m, x) => Math.max(m, Number(x.order || 0)), 0);
-  sheet.appendRow(['TASK-' + Utilities.getUuid(), eventId, maxOrder + 10, task, 'AMMINISTRAZIONE', dueDate || '', 'DA FARE', '', 'AUTO', autoKey, note || '', '', new Date()]);
-  refreshEventSummary_(eventId);
-}
-
-function refreshSelectedEventSummary() { SpreadsheetApp.flush(); }
-function refreshEventSummary_(eventId, row) { SpreadsheetApp.flush(); }
