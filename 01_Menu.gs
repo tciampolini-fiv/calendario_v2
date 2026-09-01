@@ -1,7 +1,8 @@
 function onOpen() {
   SpreadsheetApp.getUi()
     .createMenu('Calendario v2')
-    .addItem('Apri pannello evento', 'openEventSidebar')
+    .addItem('Crea / aggiorna scheda evento', 'prepareEventSheetForSelectedEvent')
+    .addItem('Aggiorna calendario dalla scheda', 'syncSelectedEventSheetToCalendar')
     .addSeparator()
     .addItem('Crea cartella di lavoro', 'createWorkFolderForSelectedEvent')
     .addItem('Genera documenti evento', 'generateDocumentsForSelectedEvent')
@@ -9,14 +10,6 @@ function onOpen() {
     .addItem('Genera checklist evento', 'generateChecklistForSelectedEvent')
     .addItem('Ripulisci checklist eventi attivi/futuri', 'rebuildCurrentAndFutureStandardChecklists')
     .addToUi();
-
-  // Aggiorna le attività che diventano eseguibili con il passare dei giorni
-  // (es. Ringraziamento Circolo e fattura successiva ad AFOR).
-  try {
-    syncAllChecklistLocks_();
-  } catch (err) {
-    console.error('Errore aggiornamento checklist in apertura:', err);
-  }
 }
 
 function onEdit(e) {
