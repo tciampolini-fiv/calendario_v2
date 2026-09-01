@@ -6,12 +6,17 @@ function onOpen() {
     .addItem('Crea cartella di lavoro', 'createWorkFolderForSelectedEvent')
     .addItem('Genera documenti evento', 'generateDocumentsForSelectedEvent')
     .addSeparator()
-    .addItem('Genera/aggiorna checklist', 'generateChecklistForSelectedEvent')
-    .addItem('Riallinea checklist standard eventi attivi/futuri', 'rebuildCurrentAndFutureStandardChecklists')
-    .addItem('Registra rimborso', 'openRefundDialog')
-    .addSeparator()
-    .addItem('Aggiorna riepiloghi', 'refreshSelectedEventSummary')
+    .addItem('Genera checklist evento', 'generateChecklistForSelectedEvent')
+    .addItem('Ripulisci checklist eventi attivi/futuri', 'rebuildCurrentAndFutureStandardChecklists')
     .addToUi();
+
+  // Aggiorna le attività che diventano eseguibili con il passare dei giorni
+  // (es. Ringraziamento Circolo e fattura successiva ad AFOR).
+  try {
+    syncAllChecklistLocks_();
+  } catch (err) {
+    console.error('Errore aggiornamento checklist in apertura:', err);
+  }
 }
 
 function onEdit(e) {
