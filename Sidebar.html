@@ -20,52 +20,32 @@
     .section-head{display:flex;align-items:center;justify-content:space-between;padding:11px 12px;cursor:pointer;font-weight:700}
     .section-body{border-top:1px solid #eee;padding:10px 12px}
     .subhead{font-weight:700;margin:6px 0 3px}
-    .hidden{display:none}
-    .muted{color:#5f6368}
-    .small{font-size:11px}
+    .hidden{display:none}.muted{color:#5f6368}.small{font-size:11px}
     .btn{border:1px solid #dadce0;background:white;border-radius:6px;padding:6px 9px;cursor:pointer}
-    .btn:disabled{cursor:default;opacity:.42}
-    .btn-primary{background:#1a73e8;color:#fff;border-color:#1a73e8}
-    .btn-small{padding:3px 6px;font-size:11px}
+    .btn:disabled{cursor:default;opacity:.42}.btn-primary{background:#1a73e8;color:#fff;border-color:#1a73e8}.btn-small{padding:3px 6px;font-size:11px}
     .task,.expense,.person,.athlete-refund{padding:8px 0;border-bottom:1px solid #eee}
     .task:last-child,.expense:last-child,.person:last-child,.athlete-refund:last-child{border-bottom:0}
     .task.task-soon{background:#fef7e0;border-left:4px solid #f9ab00;padding-left:8px;padding-right:5px}
     .task.task-late{background:#fce8e6;border-left:4px solid #d93025;padding-left:8px;padding-right:5px}
-    .row{display:flex;gap:6px;align-items:center}
-    .grow{flex:1}
-    .grid2{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+    .row{display:flex;gap:6px;align-items:center}.grow{flex:1}.grid2{display:grid;grid-template-columns:1fr 1fr;gap:6px}
     label{display:block;font-size:11px;color:#5f6368;margin-top:5px}
     input,select,textarea{width:100%;border:1px solid #dadce0;border-radius:5px;padding:6px;font:inherit}
-    input[type=checkbox]{width:auto}
-    input[readonly]{background:#f1f3f4;color:#3c4043}
+    input[type=checkbox]{width:auto}input[readonly]{background:#f1f3f4;color:#3c4043}
     textarea.auto-grow{resize:none;overflow:hidden;min-height:34px;line-height:1.35}
-    .dirty{font-size:11px;color:#b06000}
-    .savebar{position:fixed;left:0;right:0;bottom:0;background:#fff;border-top:1px solid #dadce0;padding:10px 12px;box-shadow:0 -2px 8px rgba(0,0,0,.08);z-index:20}
+    .dirty{font-size:11px;color:#b06000}.savebar{position:fixed;left:0;right:0;bottom:0;background:#fff;border-top:1px solid #dadce0;padding:10px 12px;box-shadow:0 -2px 8px rgba(0,0,0,.08);z-index:20}
     .savebar button{width:100%;font-weight:700;padding:10px;transition:background-color .18s ease,transform .18s ease}
-    .status{font-size:11px;text-align:center;margin-top:4px;min-height:13px}
-    .loading{padding:12px;text-align:center;color:#5f6368}
-    .danger{color:#d93025}
-    .pill{font-size:10px;background:#f1f3f4;border-radius:10px;padding:2px 6px}
-    .source-pill{font-size:10px;border-radius:10px;padding:2px 6px;background:#e8f0fe;color:#174ea6;white-space:nowrap}
-    .spacer{height:8px}
-    .ceb-box{font-size:12px;font-weight:700;background:#f1f3f4;border-radius:5px;padding:7px;margin-top:5px}
-    .saved-pulse{animation:savedPulse .65s ease}
-    .save-pulse{animation:saveButtonPulse .65s ease}
+    .status{font-size:11px;text-align:center;margin-top:4px;min-height:13px}.loading{padding:12px;text-align:center;color:#5f6368}.danger{color:#d93025}
+    .pill{font-size:10px;background:#f1f3f4;border-radius:10px;padding:2px 6px}.source-pill{font-size:10px;border-radius:10px;padding:2px 6px;background:#e8f0fe;color:#174ea6;white-space:nowrap}
+    .spacer{height:8px}.ceb-box{font-size:12px;font-weight:700;background:#f1f3f4;border-radius:5px;padding:7px;margin-top:5px}
+    .saved-pulse{animation:savedPulse .65s ease}.save-pulse{animation:saveButtonPulse .65s ease}
     @keyframes savedPulse{0%{background:#fff;box-shadow:none}35%{background:#e6f4ea;box-shadow:0 0 0 2px #34a853 inset}100%{background:#fff;box-shadow:none}}
     @keyframes saveButtonPulse{0%{background:#1a73e8;transform:scale(1)}35%{background:#188038;transform:scale(.985)}100%{background:#1a73e8;transform:scale(1)}}
   </style>
 </head>
 <body>
-<div class="loadbar">
-  <button id="loadBtn" class="btn" onclick="loadSelected()">CARICA DATI RIGA</button>
-</div>
-<div class="wrap">
-  <div id="app" class="loading">Caricamento evento selezionato…</div>
-</div>
-<div class="savebar">
-  <button id="saveBtn" class="btn btn-primary" onclick="saveAll()" disabled>SALVA MODIFICHE</button>
-  <div id="saveStatus" class="status muted"></div>
-</div>
+<div class="loadbar"><button id="loadBtn" class="btn" onclick="loadSelected()">CARICA DATI RIGA</button></div>
+<div class="wrap"><div id="app" class="loading">Caricamento evento selezionato…</div></div>
+<div class="savebar"><button id="saveBtn" class="btn btn-primary" onclick="saveAll()" disabled>SALVA MODIFICHE</button><div id="saveStatus" class="status muted"></div></div>
 <script>
 let state={shell:null,checklist:null,expenses:null,participants:null,loaded:{checklist:false,expenses:false,participants:false},dirty:false,saving:false,loading:false,draft:{checklistUpdates:{},newChecklist:[],deletedChecklistIds:[],expenseUpdates:{},newExpenses:[],newRefunds:[],refundLimitChange:null,participantRefundUpdates:{}}};
 
@@ -89,23 +69,14 @@ function pulseSaved(){const top=document.querySelector('.top'),btn=document.getE
 function loadSelected(){
   if(state.saving||state.loading)return;
   if(state.dirty&&!confirm('Ci sono modifiche non salvate. Vuoi scartarle e caricare la riga selezionata?'))return;
-  state.loading=true;
-  updateControls();
-  document.getElementById('app').innerHTML='<div class="loading">Caricamento evento selezionato…</div>';
+  state.loading=true;updateControls();document.getElementById('app').innerHTML='<div class="loading">Caricamento evento selezionato…</div>';
   google.script.run.withSuccessHandler(shell=>{
     state.loading=false;
     if(!shell||shell.state!=='EVENT'){
-      state.shell=null;state.checklist=null;state.expenses=null;state.participants=null;
-      state.loaded={checklist:false,expenses:false,participants:false};
-      resetDraft();
-      document.getElementById('app').innerHTML='<div class="top">'+esc(shell?.message||'Seleziona una riga evento nel Calendario.')+'</div>';
-      google.script.run.clearPanelEventRowHighlight();
-      updateControls();
-      return;
+      state.shell=null;state.checklist=null;state.expenses=null;state.participants=null;state.loaded={checklist:false,expenses:false,participants:false};resetDraft();
+      document.getElementById('app').innerHTML='<div class="top">'+esc(shell?.message||'Seleziona una riga evento nel Calendario.')+'</div>';google.script.run.clearPanelEventRowHighlight();updateControls();return;
     }
-    state.shell=shell;state.checklist=null;state.expenses=null;state.participants=null;
-    state.loaded={checklist:false,expenses:false,participants:false};
-    resetDraft();renderShell();focusCurrentRow();updateControls();
+    state.shell=shell;state.checklist=null;state.expenses=null;state.participants=null;state.loaded={checklist:false,expenses:false,participants:false};resetDraft();renderShell();focusCurrentRow();updateControls();
   }).withFailureHandler(showError).getSelectedEventShell();
 }
 
@@ -113,12 +84,12 @@ function renderShell(){const s=state.shell,e=s.event||{},m=s.summary||{};const t
 function sectionHtml(id,title,sub){return `<div class="section"><div class="section-head" onclick="toggleSection('${id}')"><div>${title}<div class="small muted">${sub}</div></div><span>›</span></div><div id="${id}Body" class="section-body hidden"></div></div>`;}
 function toggleSection(id){const body=document.getElementById(id+'Body');if(!body)return;body.classList.toggle('hidden');if(body.classList.contains('hidden')||state.loaded[id])return;body.innerHTML='<div class="loading">Caricamento…</div>';if(id==='checklist')google.script.run.withSuccessHandler(d=>{state.checklist=d.checklist||[];state.loaded.checklist=true;renderChecklist();}).withFailureHandler(showError).getPanelChecklistSection(state.shell.eventId);if(id==='expenses')google.script.run.withSuccessHandler(d=>{state.expenses=d;state.loaded.expenses=true;renderExpenses();}).withFailureHandler(showError).getPanelExpensesSection(state.shell.eventId,state.shell.row);if(id==='participants')google.script.run.withSuccessHandler(d=>{state.participants=d.participants||[];state.loaded.participants=true;renderParticipants();}).withFailureHandler(showError).getPanelParticipantsSection(state.shell.eventId);}
 
-function renderChecklist(){const body=document.getElementById('checklistBody');const list=(state.checklist||[]).filter(x=>!state.draft.deletedChecklistIds.includes(String(x.id)));body.innerHTML=(list.length?list.map(t=>{const u=state.draft.checklistUpdates[t.id]||{};const status=u.status??t.status;const due=u.dueDate??iso(t.dueDate);const urgency=taskDeadlineClass(status,due);return `<div class="task ${urgency}"><div class="row"><input type="checkbox" ${done(status)?'checked':''} onchange="taskChange('${esc(t.id)}','status',this.checked?'FATTO':'DA FARE')"><div class="grow"><b>${esc(t.task)}</b><div class="small muted">${urgency==='task-late'?'SCADUTA · ':urgency==='task-soon'?'IMMINENTE · ':''}${esc(t.priority||'')} ${t.source?'· '+esc(t.source):''}</div></div><button class="btn btn-small danger" onclick="deleteTaskDraft('${esc(t.id)}')">×</button></div><div><label>Scadenza</label><input type="date" value="${esc(due)}" oninput="taskChange('${esc(t.id)}','dueDate',this.value)"></div><div><label>Note</label><textarea class="auto-grow" rows="1" oninput="autoGrow(this);taskChange('${esc(t.id)}','note',this.value)">${esc(u.note??t.note??'')}</textarea></div></div>`;}).join(''):'<div class="muted small">Nessuna attività.</div>')+`<div id="newTasks">${state.draft.newChecklist.map((t,i)=>newTaskHtml(t,i)).join('')}</div><button class="btn" onclick="addTaskDraft()">+ Aggiungi attività</button>`;growAllNotes();}
-function taskChange(id,key,val){state.draft.checklistUpdates[id]=state.draft.checklistUpdates[id]||{id:id};state.draft.checklistUpdates[id][key]=val;markDirty();if(key==='dueDate'||key==='status')renderChecklist();}
+function renderChecklist(){const body=document.getElementById('checklistBody');const list=(state.checklist||[]).filter(x=>!state.draft.deletedChecklistIds.includes(String(x.id)));body.innerHTML=(list.length?list.map(t=>{const u=state.draft.checklistUpdates[t.id]||{};const status=u.status??t.status;const due=u.dueDate??iso(t.dueDate);const urgency=taskDeadlineClass(status,due);const alertText=urgency==='task-late'?'SCADUTA':urgency==='task-soon'?'IMMINENTE':'';return `<div class="task ${urgency}"><div class="row"><input type="checkbox" ${done(status)?'checked':''} onchange="taskChange('${esc(t.id)}','status',this.checked?'FATTO':'DA FARE')"><div class="grow"><b>${esc(t.task)}</b>${alertText?`<div class="small muted">${alertText}</div>`:''}</div><button class="btn btn-small danger" onclick="deleteTaskDraft('${esc(t.id)}')">×</button></div><label>Scadenza</label><input type="date" value="${esc(due)}" onchange="taskChange('${esc(t.id)}','dueDate',this.value)"><label>Note</label><textarea class="auto-grow" rows="1" oninput="autoGrow(this);taskChange('${esc(t.id)}','note',this.value)">${esc(u.note??t.note??'')}</textarea></div>`;}).join(''):'<div class="muted small">Nessuna attività da fare adesso.</div>')+`<div id="newTasks">${state.draft.newChecklist.map((t,i)=>newTaskHtml(t,i)).join('')}</div><button class="btn" onclick="addTaskDraft()">+ Aggiungi attività</button>`;growAllNotes();}
+function taskChange(id,key,val){state.draft.checklistUpdates[id]=state.draft.checklistUpdates[id]||{id:id};state.draft.checklistUpdates[id][key]=val;markDirty();if(key==='status')renderChecklist();}
 function deleteTaskDraft(id){if(!state.draft.deletedChecklistIds.includes(String(id)))state.draft.deletedChecklistIds.push(String(id));delete state.draft.checklistUpdates[id];markDirty();renderChecklist();}
-function addTaskDraft(){state.draft.newChecklist.push({task:'Nuova attività',dueDate:'',priority:'NORMALE',note:'',status:'DA FARE'});markDirty();renderChecklist();}
-function newTaskHtml(t,i){const urgency=taskDeadlineClass(t.status,t.dueDate);return `<div class="task ${urgency}"><div class="row"><div class="grow"><input value="${esc(t.task)}" oninput="newTaskChange(${i},'task',this.value)"></div><button class="btn btn-small danger" onclick="removeNewTask(${i})">×</button></div><div class="grid2"><div><label>Scadenza</label><input type="date" value="${esc(t.dueDate||'')}" oninput="newTaskChange(${i},'dueDate',this.value)"></div><div><label>Priorità</label><select onchange="newTaskChange(${i},'priority',this.value)"><option ${t.priority==='NORMALE'?'selected':''}>NORMALE</option><option ${t.priority==='ALTA'?'selected':''}>ALTA</option><option ${t.priority==='BASSA'?'selected':''}>BASSA</option></select></div></div><label>Note</label><textarea class="auto-grow" rows="1" oninput="autoGrow(this);newTaskChange(${i},'note',this.value)">${esc(t.note||'')}</textarea></div>`;}
-function newTaskChange(i,k,v){state.draft.newChecklist[i][k]=v;markDirty();if(k==='dueDate'||k==='status')renderChecklist();}
+function addTaskDraft(){state.draft.newChecklist.push({task:'Nuova attività',dueDate:'',note:'',status:'DA FARE'});markDirty();renderChecklist();}
+function newTaskHtml(t,i){const urgency=taskDeadlineClass(t.status,t.dueDate);return `<div class="task ${urgency}"><div class="row"><div class="grow"><input value="${esc(t.task)}" oninput="newTaskChange(${i},'task',this.value)"></div><button class="btn btn-small danger" onclick="removeNewTask(${i})">×</button></div><label>Scadenza</label><input type="date" value="${esc(t.dueDate||'')}" onchange="newTaskChange(${i},'dueDate',this.value)"><label>Note</label><textarea class="auto-grow" rows="1" oninput="autoGrow(this);newTaskChange(${i},'note',this.value)">${esc(t.note||'')}</textarea></div>`;}
+function newTaskChange(i,k,v){state.draft.newChecklist[i][k]=v;markDirty();}
 function removeNewTask(i){state.draft.newChecklist.splice(i,1);markDirty();renderChecklist();}
 
 function expenseCategories(){return ['VITTO / ALLOGGIO','VIAGGI','NOLEGGI','ISCRIZIONI','TRASPORTO','ALTRO'];}
@@ -128,6 +99,8 @@ function refundTotalFor(name){const all=state.expenses?.expenses||[];return all.
 function participantDisplayName(p){return ((p.name||'')+' '+(p.surname||'')).trim();}
 function participantOverrideValue(p){const d=state.draft.participantRefundUpdates[p.id];if(d){if(d.reset)return Number(state.expenses?.refundLimit?.value||0);return Number(d.value||0);}const has=p.refundLimitOverride!==''&&p.refundLimitOverride!==null&&p.refundLimitOverride!==undefined;return has?Number(p.refundLimitOverride||0):Number(state.expenses?.refundLimit?.value||0);}
 function participantOverrideSource(p){const d=state.draft.participantRefundUpdates[p.id];if(d)return d.reset?'standard evento':'personalizzato';const has=p.refundLimitOverride!==''&&p.refundLimitOverride!==null&&p.refundLimitOverride!==undefined;return has?'personalizzato':'standard evento';}
+function expenseUiStatus(status){const s=norm(status);if(['AFOR FATTO','PAGAMENTO AFOR','PAGATO - AFOR'].includes(s))return 'PAGATO - AFOR';if(['PAGATO - FATTURA','PAGAMENTO FATTURA'].includes(s))return 'PAGATO - FATTURA';if(['CHIUSO','PAGATO CON CC','INVIATO IN AMMINISTRAZIONE','PAGATO','RIMBORSATO'].includes(s))return 'CHIUSO';return 'DA PAGARE';}
+function paymentOptions(current){const opts=['DA PAGARE','PAGATO - FATTURA','PAGATO - AFOR'];if(current==='CHIUSO')opts.push('CHIUSO');return opts.map(s=>`<option ${current===s?'selected':''} ${s==='CHIUSO'?'disabled':''}>${s}</option>`).join('');}
 
 function renderExpenses(){
   const body=document.getElementById('expensesBody'),d=state.expenses||{},all=d.expenses||[],sp=all.filter(x=>norm(x.type)!=='RIMBORSO'),rf=all.filter(x=>norm(x.type)==='RIMBORSO'),athletes=athleteParticipants();
@@ -140,17 +113,17 @@ function athleteRefundHtml(p){const name=participantDisplayName(p),limit=partici
 function participantRefundChange(id,v){state.draft.participantRefundUpdates[id]={id:id,value:Number(v||0),reset:false};markDirty();}
 function participantRefundReset(id){state.draft.participantRefundUpdates[id]={id:id,reset:true};markDirty();renderExpenses();}
 
-function expenseHtml(x){const u=state.draft.expenseUpdates[x.id]||{};return `<div class="expense"><div class="row"><b class="grow">${esc(x.description||x.category||'Spesa')}</b><span class="pill">${esc(u.status??x.status??'')}</span></div><div class="small muted">${esc(x.ceb||'')} ${x.notes?'· '+esc(x.notes):''}</div><div class="grid2"><div><label>Effettivo</label><input type="number" step="0.01" value="${esc(u.actual??x.actual??0)}" oninput="expenseChange('${esc(x.id)}','actual',this.value)"></div><div><label>Scadenza</label><input type="date" value="${esc(u.dueDate??iso(x.dueDate))}" oninput="expenseChange('${esc(x.id)}','dueDate',this.value)"></div></div><label>Stato</label><select onchange="expenseChange('${esc(x.id)}','status',this.value)">${['DA DEFINIRE','DA PAGARE','AFOR FATTO','PAGATO CON CC','INVIATO IN AMMINISTRAZIONE','CHIUSO'].map(s=>`<option ${(u.status??x.status)===s?'selected':''}>${s}</option>`).join('')}</select><label>Note</label><textarea class="auto-grow" rows="1" oninput="autoGrow(this);expenseChange('${esc(x.id)}','notes',this.value)">${esc(u.notes??x.notes??'')}</textarea><div class="row"><label class="grow"><input type="checkbox" ${(u.invoiceReceived??x.invoiceReceived)?'checked':''} onchange="expenseChange('${esc(x.id)}','invoiceReceived',this.checked)"> Fattura ricevuta</label><label class="grow"><input type="checkbox" ${(u.receiptRequested??x.receiptRequested)?'checked':''} onchange="expenseChange('${esc(x.id)}','receiptRequested',this.checked)"> Contabile richiesta</label></div></div>`;}
-function expenseChange(id,k,v){state.draft.expenseUpdates[id]=state.draft.expenseUpdates[id]||{id:id};state.draft.expenseUpdates[id][k]=v;markDirty();}
+function expenseHtml(x){const u=state.draft.expenseUpdates[x.id]||{};const status=expenseUiStatus(u.status??x.status);const invoice=u.invoiceReceived??x.invoiceReceived;return `<div class="expense"><div class="row"><b class="grow">${esc(x.description||x.category||'Spesa')}</b><span class="pill">${esc(status)}</span></div><div class="small muted">${esc(x.ceb||'')} ${x.notes?'· '+esc(x.notes):''}</div><label>Importo pagato / effettivo</label><input type="number" min="0" step="0.01" value="${esc(u.actual??x.actual??0)}" oninput="expenseChange('${esc(x.id)}','actual',this.value)"><label>Scadenza pagamento</label><input type="date" value="${esc(u.dueDate??iso(x.dueDate))}" onchange="expenseChange('${esc(x.id)}','dueDate',this.value)"><label>Pagamento</label><select onchange="expenseChange('${esc(x.id)}','status',this.value)">${paymentOptions(status)}</select><label>Note</label><textarea class="auto-grow" rows="1" oninput="autoGrow(this);expenseChange('${esc(x.id)}','notes',this.value)">${esc(u.notes??x.notes??'')}</textarea>${status==='PAGATO - AFOR'?`<label><input type="checkbox" ${invoice?'checked':''} onchange="expenseChange('${esc(x.id)}','invoiceReceived',this.checked)"> Fattura ricevuta (chiude la pratica)</label>`:''}</div>`;}
+function expenseChange(id,k,v){state.draft.expenseUpdates[id]=state.draft.expenseUpdates[id]||{id:id};state.draft.expenseUpdates[id][k]=v;markDirty();if(k==='status')renderExpenses();}
 function refundLimitSet(v){state.draft.refundLimitChange={mode:'SET',value:Number(v||0)};markDirty();}
 function refundLimitReset(){state.draft.refundLimitChange={mode:'RESET'};markDirty();if(state.expenses){state.expenses.refundLimit={value:state.expenses.standardRefundLimit,source:'STANDARD'};}renderExpenses();}
-function addExpenseDraft(){state.draft.newExpenses.push({description:'',category:'VITTO / ALLOGGIO',actual:'',dueDate:'',status:'DA DEFINIRE',rifStatus:'NON NECESSARIO',rifCode:'',invoiceReceived:false,receiptRequested:false,notes:''});markDirty();renderExpenses();}
-function newExpenseHtml(x,i){const ceb=cebForCategory(x.category);return `<div class="expense"><label>Descrizione</label><input placeholder="es. Hotel, volo tecnico, noleggio gommone" value="${esc(x.description)}" oninput="newExpenseChange(${i},'description',this.value)"><label>Categoria</label><select onchange="newExpenseChange(${i},'category',this.value);renderExpenses()">${expenseCategories().map(s=>`<option ${x.category===s?'selected':''}>${s}</option>`).join('')}</select><label>CEB automatico</label><div class="ceb-box">${esc(ceb||'Da definire')}</div><label>Note</label><textarea class="auto-grow" rows="1" placeholder="Fornitore e altri dettagli" oninput="autoGrow(this);newExpenseChange(${i},'notes',this.value)">${esc(x.notes||'')}</textarea><div class="grid2"><div><label>Importo effettivo</label><input type="number" min="0" step="0.01" value="${esc(x.actual)}" oninput="newExpenseChange(${i},'actual',this.value)"></div><div><label>Scadenza</label><input type="date" value="${esc(x.dueDate)}" oninput="newExpenseChange(${i},'dueDate',this.value)"></div></div><button class="btn btn-small danger" onclick="removeNewExpense(${i})">Rimuovi</button></div>`;}
+function addExpenseDraft(){state.draft.newExpenses.push({description:'',category:'VITTO / ALLOGGIO',actual:'',dueDate:'',status:'DA PAGARE',invoiceReceived:false,notes:''});markDirty();renderExpenses();}
+function newExpenseHtml(x,i){const ceb=cebForCategory(x.category),status=expenseUiStatus(x.status);return `<div class="expense"><label>Descrizione</label><input placeholder="es. Hotel, volo tecnico, noleggio gommone" value="${esc(x.description)}" oninput="newExpenseChange(${i},'description',this.value)"><label>Categoria</label><select onchange="newExpenseChange(${i},'category',this.value);renderExpenses()">${expenseCategories().map(s=>`<option ${x.category===s?'selected':''}>${s}</option>`).join('')}</select><label>CEB automatico</label><div class="ceb-box">${esc(ceb||'Da definire')}</div><label>Note</label><textarea class="auto-grow" rows="1" placeholder="Fornitore e altri dettagli" oninput="autoGrow(this);newExpenseChange(${i},'notes',this.value)">${esc(x.notes||'')}</textarea><label>Importo pagato / effettivo</label><input type="number" min="0" step="0.01" value="${esc(x.actual)}" oninput="newExpenseChange(${i},'actual',this.value)"><label>Scadenza pagamento</label><input type="date" value="${esc(x.dueDate)}" onchange="newExpenseChange(${i},'dueDate',this.value)"><label>Pagamento</label><select onchange="newExpenseChange(${i},'status',this.value);renderExpenses()">${paymentOptions(status)}</select><button class="btn btn-small danger" onclick="removeNewExpense(${i})">Rimuovi</button></div>`;}
 function newExpenseChange(i,k,v){state.draft.newExpenses[i][k]=v;markDirty();}
 function removeNewExpense(i){state.draft.newExpenses.splice(i,1);markDirty();renderExpenses();}
 
 function addRefundDraft(){const athletes=athleteParticipants();state.draft.newRefunds.push({role:'ATLETA',beneficiary:athletes[0]?participantDisplayName(athletes[0]):'',amount:'',paidDate:'',notes:'',confirmedOverLimit:false});markDirty();renderExpenses();}
-function newRefundHtml(x,i){const people=state.expenses?.participants||[];const personField=people.length?`<select onchange="newRefundChange(${i},'beneficiary',this.value)"><option value="">Seleziona…</option>${people.map(p=>{const n=participantDisplayName(p);return `<option value="${esc(n)}" ${x.beneficiary===n?'selected':''}>${esc(n)}</option>`;}).join('')}</select>`:`<input value="${esc(x.beneficiary)}" oninput="newRefundChange(${i},'beneficiary',this.value)">`;return `<div class="expense"><div class="grid2"><div><label>Ruolo</label><select onchange="newRefundChange(${i},'role',this.value)"><option ${x.role==='ATLETA'?'selected':''}>ATLETA</option><option ${x.role==='TECNICO'?'selected':''}>TECNICO</option><option ${x.role==='ALTRO'?'selected':''}>ALTRO</option></select></div><div><label>Importo</label><input type="number" step="0.01" value="${esc(x.amount)}" oninput="newRefundChange(${i},'amount',this.value)"></div></div><label>Beneficiario</label>${personField}<label>Data</label><input type="date" value="${esc(x.paidDate)}" oninput="newRefundChange(${i},'paidDate',this.value)"><label>Note</label><textarea class="auto-grow" rows="1" oninput="autoGrow(this);newRefundChange(${i},'notes',this.value)">${esc(x.notes||'')}</textarea><label><input type="checkbox" ${x.confirmedOverLimit?'checked':''} onchange="newRefundChange(${i},'confirmedOverLimit',this.checked)"> Confermo eventuale superamento massimale</label><button class="btn btn-small danger" onclick="removeNewRefund(${i})">Rimuovi</button></div>`;}
+function newRefundHtml(x,i){const people=state.expenses?.participants||[];const personField=people.length?`<select onchange="newRefundChange(${i},'beneficiary',this.value)"><option value="">Seleziona…</option>${people.map(p=>{const n=participantDisplayName(p);return `<option value="${esc(n)}" ${x.beneficiary===n?'selected':''}>${esc(n)}</option>`;}).join('')}</select>`:`<input value="${esc(x.beneficiary)}" oninput="newRefundChange(${i},'beneficiary',this.value)">`;return `<div class="expense"><div class="grid2"><div><label>Ruolo</label><select onchange="newRefundChange(${i},'role',this.value)"><option ${x.role==='ATLETA'?'selected':''}>ATLETA</option><option ${x.role==='TECNICO'?'selected':''}>TECNICO</option><option ${x.role==='ALTRO'?'selected':''}>ALTRO</option></select></div><div><label>Importo</label><input type="number" step="0.01" value="${esc(x.amount)}" oninput="newRefundChange(${i},'amount',this.value)"></div></div><label>Beneficiario</label>${personField}<label>Data</label><input type="date" value="${esc(x.paidDate)}" onchange="newRefundChange(${i},'paidDate',this.value)"><label>Note</label><textarea class="auto-grow" rows="1" oninput="autoGrow(this);newRefundChange(${i},'notes',this.value)">${esc(x.notes||'')}</textarea><label><input type="checkbox" ${x.confirmedOverLimit?'checked':''} onchange="newRefundChange(${i},'confirmedOverLimit',this.checked)"> Confermo eventuale superamento massimale</label><button class="btn btn-small danger" onclick="removeNewRefund(${i})">Rimuovi</button></div>`;}
 function newRefundChange(i,k,v){state.draft.newRefunds[i][k]=v;markDirty();}
 function removeNewRefund(i){state.draft.newRefunds.splice(i,1);markDirty();renderExpenses();}
 
@@ -164,12 +137,8 @@ function saveAll(){
     state.saving=true;updateControls();document.getElementById('saveStatus').textContent='Salvataggio…';
     const payload={eventId:state.shell.eventId,row:state.shell.row,checklistUpdates:Object.values(state.draft.checklistUpdates),newChecklist:state.draft.newChecklist,deletedChecklistIds:state.draft.deletedChecklistIds,expenseUpdates:Object.values(state.draft.expenseUpdates),newExpenses:state.draft.newExpenses,newRefunds:state.draft.newRefunds,refundLimitChange:state.draft.refundLimitChange,participantRefundUpdates:Object.values(state.draft.participantRefundUpdates),returnChecklist:state.loaded.checklist,returnExpenses:state.loaded.expenses};
     google.script.run.withSuccessHandler(r=>{
-      state.saving=false;state.shell=r.shell||state.shell;
-      if(r.checklist){state.checklist=r.checklist;state.loaded.checklist=true;}
-      if(r.expensesSection){state.expenses=r.expensesSection;state.loaded.expenses=true;}
-      resetDraft();renderShell();
-      if(state.loaded.checklist){document.getElementById('checklistBody').classList.remove('hidden');renderChecklist();}
-      if(state.loaded.expenses){document.getElementById('expensesBody').classList.remove('hidden');renderExpenses();}
+      state.saving=false;state.shell=r.shell||state.shell;if(r.checklist){state.checklist=r.checklist;state.loaded.checklist=true;}if(r.expensesSection){state.expenses=r.expensesSection;state.loaded.expenses=true;}
+      resetDraft();renderShell();if(state.loaded.checklist){document.getElementById('checklistBody').classList.remove('hidden');renderChecklist();}if(state.loaded.expenses){document.getElementById('expensesBody').classList.remove('hidden');renderExpenses();}
       focusCurrentRow();document.getElementById('saveStatus').textContent='Salvato.';updateControls();pulseSaved();
     }).withFailureHandler(showError).saveEventPanelDraft(payload);
   },0);
