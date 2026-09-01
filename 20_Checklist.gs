@@ -7,14 +7,21 @@ function getChecklistRowsForEventRaw_(eventId) {
 }
 
 /**
- * La sidebar mostra solo le attività aperte e realmente eseguibili adesso.
- * Le attività completate e quelle BLOCCATE restano nel backend ma non vengono mostrate.
+ * Restituisce l'intero quadro dell'evento: attività da fare, in attesa e fatte.
+ * Le vecchie BLOCCATA sono trattate come IN ATTESA per compatibilità storica.
  */
 function getChecklistForEvent_(eventId) {
   syncChecklistLocksForEvent_(eventId);
   return getChecklistRowsForEventRaw_(eventId)
-    .filter(x => normalize_(x.status) === 'DA FARE')
+    .map(x => {
+      if (normalize_(x.status) === 'BLOCCATA') x.status = 'IN ATTESA';
+      return x;
+    })
     .sort((a, b) => {
+      const rank = { 'DA FARE': 1, 'IN ATTESA': 2, 'FATTO': 3, 'COMPLETATA': 3 };
+      const aRank = rank[normalize_(a.status)] || 9;
+      const bRank = rank[normalize_(b.status)] || 9;
+      if (aRank !== bRank) return aRank - bRank;
       const aDue = a.dueDate instanceof Date ? a.dueDate.getTime() : Number.POSITIVE_INFINITY;
       const bDue = b.dueDate instanceof Date ? b.dueDate.getTime() : Number.POSITIVE_INFINITY;
       if (aDue !== bDue) return aDue - bDue;
@@ -60,6 +67,23 @@ function eventHasEnded_(event, today) {
   return day > endDay;
 }
 
+function taskDueBeforeToday_(value, today) {
+  if (!(value instanceof Date)) return false;
+  const due = new Date(value);
+  due.setHours(0, 0, 0, 0);
+  return due < today;
+}
+
+/**
+ * Gestisce le attività STANDARD e AUTO senza nasconderle mai.
+ *
+ * - attività iniziali: DA FARE;
+ * - attività che dipendono da una richiesta precedente: IN ATTESA finché la richiesta non è FATTA;
+ * - dopo la richiesta: restano IN ATTESA della risposta; alla scadenza diventano DA FARE (sollecito);
+ * - se l'utente anticipa manualmente una task impostandola DA FARE, lo stato viene rispettato;
+ * - attività legate alla fine evento (es. Ringraziamento Circolo) restano IN ATTESA fino al giorno successivo alla fine;
+ * - fattura dopo AFOR: IN ATTESA fino a fine evento, poi DA FARE.
+ */
 function syncChecklistLocksForEvent_(eventId) {
   const found = findCalendarEventById_(eventId);
   if (!found) return;
@@ -83,28 +107,43 @@ function syncChecklistLocksForEvent_(eventId) {
   const updates = [];
 
   eventRows.forEach(item => {
-    const current = normalize_(item.values[6]);
+    let current = normalize_(item.values[6]);
     if (current === 'FATTO' || current === 'COMPLETATA') return;
+    if (current === 'BLOCCATA') current = 'IN ATTESA';
+
     let managed = false;
-    let blocked = false;
+    let desired = current || 'DA FARE';
 
     if (item.source === 'STANDARD') {
       managed = true;
       const rule = rules[item.key] || {};
-      if (rule.dependsOn) {
+
+      if (rule.unlockDateBase === 'FINE') {
+        desired = ended ? 'DA FARE' : 'IN ATTESA';
+      } else if (rule.dependsOn) {
         const previous = byKey[rule.dependsOn];
         const previousStatus = previous ? normalize_(previous.values[6]) : '';
-        if (previousStatus !== 'FATTO' && previousStatus !== 'COMPLETATA') blocked = true;
+        const previousDone = previousStatus === 'FATTO' || previousStatus === 'COMPLETATA';
+        if (!previousDone) {
+          desired = 'IN ATTESA';
+        } else if (taskDueBeforeToday_(item.values[5], today)) {
+          desired = 'DA FARE';
+        } else if (current === 'DA FARE') {
+          // Consente un sollecito anticipato impostato volontariamente dall'utente.
+          desired = 'DA FARE';
+        } else {
+          desired = 'IN ATTESA';
+        }
+      } else {
+        desired = 'DA FARE';
       }
-      if (!blocked && rule.unlockDateBase === 'FINE' && !ended) blocked = true;
     } else if (item.source === 'AUTO' && item.key.indexOf('FATTURA_AFOR:') === 0) {
       managed = true;
-      blocked = !ended;
+      desired = ended ? 'DA FARE' : 'IN ATTESA';
     }
 
     if (!managed) return;
-    const desired = blocked ? 'BLOCCATA' : 'DA FARE';
-    if (current !== desired) updates.push({ row: item.row, status: desired });
+    if (normalize_(item.values[6]) !== desired) updates.push({ row: item.row, status: desired });
   });
 
   updates.forEach(u => {
