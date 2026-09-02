@@ -1,43 +1,31 @@
 const EVENT_PARTICIPANT_SHEET_V2 = 'Partecipanti';
 
 function prepareEventSheetForSelectedEventV2() {
-  prepareLegacyParticipantSheetNameV2_();
-  try {
-    const result = prepareEventSheetForSelectedEvent();
-    refineSelectedEventSheetV2_();
-    applyOutstandingExpenseFormulaV2_();
-    return result;
-  } finally {
-    restoreParticipantSheetNameV2_();
+  const result = prepareEventSheetForSelectedEvent();
+  const event = selectedEvent_();
+  const eventId = ensureEventId_(event);
+  const child = findSelectedEventSheetV2_();
+  if (child) {
+    ensureParticipantsBackendHeadersV2_();
+    refreshParticipantsV2FromBackend_(eventId,event,child);
+    refineExpenseSheetV2_(child);
   }
+  applyOutstandingExpenseFormulaV2_();
+  return result;
 }
 
 function syncSelectedEventSheetToCalendarV2() {
-  prepareLegacyParticipantSheetNameV2_();
-  try {
-    const result = syncSelectedEventSheetToCalendar();
-    refineSelectedEventSheetV2_();
-    applyOutstandingExpenseFormulaV2_();
-    return result;
-  } finally {
-    restoreParticipantSheetNameV2_();
+  const result = syncSelectedEventSheetToCalendar();
+  const event = selectedEvent_();
+  const eventId = ensureEventId_(event);
+  const child = findSelectedEventSheetV2_();
+  if (child) {
+    syncParticipantsV2ToBackend_(eventId,event,child);
+    refreshParticipantsV2FromBackend_(eventId,event,child);
+    refineExpenseSheetV2_(child);
   }
-}
-
-function prepareLegacyParticipantSheetNameV2_() {
-  const child = findSelectedEventSheetV2_();
-  if (!child) return;
-  const modern = child.getSheetByName(EVENT_PARTICIPANT_SHEET_V2);
-  const legacy = child.getSheetByName(EVENT_SHEET.SHEETS.GUESTS);
-  if (modern && !legacy) modern.setName(EVENT_SHEET.SHEETS.GUESTS);
-}
-
-function restoreParticipantSheetNameV2_() {
-  const child = findSelectedEventSheetV2_();
-  if (!child) return;
-  const modern = child.getSheetByName(EVENT_PARTICIPANT_SHEET_V2);
-  const legacy = child.getSheetByName(EVENT_SHEET.SHEETS.GUESTS);
-  if (legacy && !modern) legacy.setName(EVENT_PARTICIPANT_SHEET_V2);
+  applyOutstandingExpenseFormulaV2_();
+  return result;
 }
 
 function findSelectedEventSheetV2_() {
@@ -61,8 +49,9 @@ function refineSelectedEventSheetV2_() {
   const folder = createWorkFolderForEvent_(eventId, event, event._row);
   const child = findEventSheet_(eventId, event, folder.folderId);
   if (!child) return;
+  ensureParticipantsBackendHeadersV2_();
+  refreshParticipantsV2FromBackend_(eventId,event,child);
   refineExpenseSheetV2_(child);
-  refineGuestRefundSummaryV2_(child);
 }
 
 function refineExpenseSheetV2_(child) {
@@ -78,33 +67,6 @@ function refineExpenseSheetV2_(child) {
     sheet.getRange('L2:P1000').setNumberFormat('@');
     sheet.getRange('Q2:S1000').setNumberFormat('dd/MM/yyyy');
   }
-}
-
-function refineGuestRefundSummaryV2_(child) {
-  const sheet = getParticipantSheetV2_(child);
-  if (!sheet) return;
-  if (sheet.getMaxColumns() < 13) sheet.insertColumnsAfter(sheet.getMaxColumns(), 13 - sheet.getMaxColumns());
-
-  sheet.getRange('M1').setValue('RIMBORSO PASSATO');
-  if (sheet.getMaxColumns() > 13) {
-    sheet.getRange(1, 14, sheet.getMaxRows(), sheet.getMaxColumns() - 13).clearContent();
-    sheet.hideColumns(14, sheet.getMaxColumns() - 13);
-  }
-  sheet.showColumns(13);
-  sheet.getRange('M2:M1000').clearContent().setNumberFormat('€ #,##0.00');
-
-  const lastRow = sheet.getLastRow();
-  if (lastRow < 2) return;
-  const formulas = [];
-  for (let row = 2; row <= lastRow; row++) {
-    const fullName = 'TRIM($D' + row + '&" "&$E' + row + ')';
-    formulas.push([
-      '=IF(AND($D' + row + '="";$E' + row + '="");"";IF($C' + row + '<>"";' +
-      'SUMIFS(Spese!$E:$E;Spese!$N:$N;$C' + row + ';Spese!$B:$B;"RIMBORSO";Spese!$F:$F;"PAGATO");' +
-      'SUMIFS(Spese!$E:$E;Spese!$C:$C;' + fullName + ';Spese!$B:$B;"RIMBORSO";Spese!$F:$F;"PAGATO")))'
-    ]);
-  }
-  sheet.getRange(2, 13, formulas.length, 1).setFormulas(formulas);
 }
 
 function applyOutstandingExpenseFormulaV2_() {
