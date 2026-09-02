@@ -18,7 +18,23 @@ function refineSelectedEventSheetV2_() {
   const folder = createWorkFolderForEvent_(eventId, event, event._row);
   const child = findEventSheet_(eventId, event, folder.folderId);
   if (!child) return;
+  refineExpenseSheetV2_(child);
   refineGuestRefundSummaryV2_(child);
+}
+
+function refineExpenseSheetV2_(child) {
+  const sheet = child.getSheetByName(EVENT_SHEET.SHEETS.EXPENSES);
+  if (!sheet) return;
+
+  // J e' testo (PROMEMORIA 2), non una data.
+  sheet.getRange('J2:J1000').setNumberFormat('@');
+
+  // Ripulisce eventuali vecchie validazioni/formati rimasti nelle colonne tecniche nascoste.
+  if (sheet.getMaxColumns() >= 19) {
+    sheet.getRange('L2:S1000').clearDataValidations();
+    sheet.getRange('L2:P1000').setNumberFormat('@');
+    sheet.getRange('Q2:S1000').setNumberFormat('dd/MM/yyyy');
+  }
 }
 
 function refineGuestRefundSummaryV2_(child) {
@@ -38,9 +54,11 @@ function refineGuestRefundSummaryV2_(child) {
   if (lastRow < 2) return;
   const formulas = [];
   for (let row = 2; row <= lastRow; row++) {
-    const person = 'TRIM($D' + row + '&" "&$E' + row + ')';
+    const fullName = 'TRIM($D' + row + '&" "&$E' + row + ')';
     formulas.push([
-      '=IF(AND($D' + row + '="";$E' + row + '="");"";SUMIFS(Spese!$E:$E;Spese!$C:$C;' + person + ';Spese!$B:$B;"RIMBORSO";Spese!$F:$F;"PAGATO"))'
+      '=IF(AND($D' + row + '="";$E' + row + '="");"";IF($C' + row + '<>"";' +
+      'SUMIFS(Spese!$E:$E;Spese!$N:$N;$C' + row + ';Spese!$B:$B;"RIMBORSO";Spese!$F:$F;"PAGATO");' +
+      'SUMIFS(Spese!$E:$E;Spese!$C:$C;' + fullName + ';Spese!$B:$B;"RIMBORSO";Spese!$F:$F;"PAGATO")))'
     ]);
   }
   sheet.getRange(2, 13, formulas.length, 1).setFormulas(formulas);
