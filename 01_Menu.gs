@@ -1,8 +1,8 @@
 function onOpen() {
   SpreadsheetApp.getUi()
     .createMenu('Calendario v2')
-    .addItem('Crea / aggiorna scheda evento', 'prepareEventSheetForSelectedEvent')
-    .addItem('Aggiorna calendario dalla scheda', 'syncSelectedEventSheetToCalendar')
+    .addItem('Crea / aggiorna scheda evento', 'prepareEventSheetForSelectedEventV2')
+    .addItem('Aggiorna calendario dalla scheda', 'syncSelectedEventSheetToCalendarV2')
     .addSeparator()
     .addItem('Crea cartella di lavoro', 'createWorkFolderForSelectedEvent')
     .addItem('Genera documenti evento', 'generateDocumentsForSelectedEvent')
