@@ -1,15 +1,58 @@
+const EVENT_PARTICIPANT_SHEET_V2 = 'Partecipanti';
+
 function prepareEventSheetForSelectedEventV2() {
-  const result = prepareEventSheetForSelectedEvent();
-  refineSelectedEventSheetV2_();
-  applyOutstandingExpenseFormulaV2_();
-  return result;
+  prepareLegacyParticipantSheetNameV2_();
+  try {
+    const result = prepareEventSheetForSelectedEvent();
+    refineSelectedEventSheetV2_();
+    applyOutstandingExpenseFormulaV2_();
+    return result;
+  } finally {
+    restoreParticipantSheetNameV2_();
+  }
 }
 
 function syncSelectedEventSheetToCalendarV2() {
-  const result = syncSelectedEventSheetToCalendar();
-  refineSelectedEventSheetV2_();
-  applyOutstandingExpenseFormulaV2_();
-  return result;
+  prepareLegacyParticipantSheetNameV2_();
+  try {
+    const result = syncSelectedEventSheetToCalendar();
+    refineSelectedEventSheetV2_();
+    applyOutstandingExpenseFormulaV2_();
+    return result;
+  } finally {
+    restoreParticipantSheetNameV2_();
+  }
+}
+
+function prepareLegacyParticipantSheetNameV2_() {
+  const child = findSelectedEventSheetV2_();
+  if (!child) return;
+  const modern = child.getSheetByName(EVENT_PARTICIPANT_SHEET_V2);
+  const legacy = child.getSheetByName(EVENT_SHEET.SHEETS.GUESTS);
+  if (modern && !legacy) modern.setName(EVENT_SHEET.SHEETS.GUESTS);
+}
+
+function restoreParticipantSheetNameV2_() {
+  const child = findSelectedEventSheetV2_();
+  if (!child) return;
+  const modern = child.getSheetByName(EVENT_PARTICIPANT_SHEET_V2);
+  const legacy = child.getSheetByName(EVENT_SHEET.SHEETS.GUESTS);
+  if (legacy && !modern) legacy.setName(EVENT_PARTICIPANT_SHEET_V2);
+}
+
+function findSelectedEventSheetV2_() {
+  try {
+    const event = selectedEvent_();
+    const eventId = ensureEventId_(event);
+    const folder = createWorkFolderForEvent_(eventId, event, event._row);
+    return findEventSheet_(eventId, event, folder.folderId);
+  } catch (e) {
+    return null;
+  }
+}
+
+function getParticipantSheetV2_(child) {
+  return child.getSheetByName(EVENT_PARTICIPANT_SHEET_V2) || child.getSheetByName(EVENT_SHEET.SHEETS.GUESTS);
 }
 
 function refineSelectedEventSheetV2_() {
@@ -38,7 +81,7 @@ function refineExpenseSheetV2_(child) {
 }
 
 function refineGuestRefundSummaryV2_(child) {
-  const sheet = child.getSheetByName(EVENT_SHEET.SHEETS.GUESTS);
+  const sheet = getParticipantSheetV2_(child);
   if (!sheet) return;
   if (sheet.getMaxColumns() < 13) sheet.insertColumnsAfter(sheet.getMaxColumns(), 13 - sheet.getMaxColumns());
 
