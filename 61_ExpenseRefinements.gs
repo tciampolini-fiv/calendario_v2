@@ -1,13 +1,7 @@
 const EVENT_PARTICIPANT_SHEET_V2 = 'Partecipanti';
 
 function prepareEventSheetForSelectedEventV2() {
-  const renamed = temporarilyUseLegacyParticipantSheetNameV2_();
-  let result;
-  try {
-    result = prepareEventSheetForSelectedEvent();
-  } finally {
-    if (renamed) restoreModernParticipantSheetNameV2_();
-  }
+  const result = prepareEventSheetForSelectedEvent();
   const event = selectedEvent_();
   const eventId = ensureEventId_(event);
   const child = findSelectedEventSheetV2_();
@@ -15,19 +9,15 @@ function prepareEventSheetForSelectedEventV2() {
     ensureParticipantsBackendHeadersV2_();
     refreshParticipantsV2FromBackend_(eventId,event,child);
     refineExpenseSheetV2_(child);
+    const legacy = child.getSheetByName(EVENT_SHEET.SHEETS.GUESTS);
+    if (legacy) legacy.hideSheet();
   }
   applyOutstandingExpenseFormulaV2_();
   return result;
 }
 
 function syncSelectedEventSheetToCalendarV2() {
-  const renamed = temporarilyUseLegacyParticipantSheetNameV2_();
-  let result;
-  try {
-    result = syncSelectedEventSheetToCalendar();
-  } finally {
-    if (renamed) restoreModernParticipantSheetNameV2_();
-  }
+  const result = syncSelectedEventSheetToCalendar();
   const event = selectedEvent_();
   const eventId = ensureEventId_(event);
   const child = findSelectedEventSheetV2_();
@@ -35,29 +25,11 @@ function syncSelectedEventSheetToCalendarV2() {
     syncParticipantsV2ToBackend_(eventId,event,child);
     refreshParticipantsV2FromBackend_(eventId,event,child);
     refineExpenseSheetV2_(child);
+    const legacy = child.getSheetByName(EVENT_SHEET.SHEETS.GUESTS);
+    if (legacy) legacy.hideSheet();
   }
   applyOutstandingExpenseFormulaV2_();
   return result;
-}
-
-function temporarilyUseLegacyParticipantSheetNameV2_() {
-  const child = findSelectedEventSheetV2_();
-  if (!child) return false;
-  const modern = child.getSheetByName(EVENT_PARTICIPANT_SHEET_V2);
-  const legacy = child.getSheetByName(EVENT_SHEET.SHEETS.GUESTS);
-  if (modern && !legacy) {
-    modern.setName(EVENT_SHEET.SHEETS.GUESTS);
-    return true;
-  }
-  return false;
-}
-
-function restoreModernParticipantSheetNameV2_() {
-  const child = findSelectedEventSheetV2_();
-  if (!child) return;
-  const legacy = child.getSheetByName(EVENT_SHEET.SHEETS.GUESTS);
-  const modern = child.getSheetByName(EVENT_PARTICIPANT_SHEET_V2);
-  if (legacy && !modern) legacy.setName(EVENT_PARTICIPANT_SHEET_V2);
 }
 
 function findSelectedEventSheetV2_() {
@@ -84,6 +56,8 @@ function refineSelectedEventSheetV2_() {
   ensureParticipantsBackendHeadersV2_();
   refreshParticipantsV2FromBackend_(eventId,event,child);
   refineExpenseSheetV2_(child);
+  const legacy = child.getSheetByName(EVENT_SHEET.SHEETS.GUESTS);
+  if (legacy) legacy.hideSheet();
 }
 
 function refineExpenseSheetV2_(child) {
