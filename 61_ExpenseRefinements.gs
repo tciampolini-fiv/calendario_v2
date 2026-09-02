@@ -1,7 +1,13 @@
 const EVENT_PARTICIPANT_SHEET_V2 = 'Partecipanti';
 
 function prepareEventSheetForSelectedEventV2() {
-  const result = prepareEventSheetForSelectedEvent();
+  const renamed = temporarilyUseLegacyParticipantSheetNameV2_();
+  let result;
+  try {
+    result = prepareEventSheetForSelectedEvent();
+  } finally {
+    if (renamed) restoreModernParticipantSheetNameV2_();
+  }
   const event = selectedEvent_();
   const eventId = ensureEventId_(event);
   const child = findSelectedEventSheetV2_();
@@ -15,7 +21,13 @@ function prepareEventSheetForSelectedEventV2() {
 }
 
 function syncSelectedEventSheetToCalendarV2() {
-  const result = syncSelectedEventSheetToCalendar();
+  const renamed = temporarilyUseLegacyParticipantSheetNameV2_();
+  let result;
+  try {
+    result = syncSelectedEventSheetToCalendar();
+  } finally {
+    if (renamed) restoreModernParticipantSheetNameV2_();
+  }
   const event = selectedEvent_();
   const eventId = ensureEventId_(event);
   const child = findSelectedEventSheetV2_();
@@ -26,6 +38,26 @@ function syncSelectedEventSheetToCalendarV2() {
   }
   applyOutstandingExpenseFormulaV2_();
   return result;
+}
+
+function temporarilyUseLegacyParticipantSheetNameV2_() {
+  const child = findSelectedEventSheetV2_();
+  if (!child) return false;
+  const modern = child.getSheetByName(EVENT_PARTICIPANT_SHEET_V2);
+  const legacy = child.getSheetByName(EVENT_SHEET.SHEETS.GUESTS);
+  if (modern && !legacy) {
+    modern.setName(EVENT_SHEET.SHEETS.GUESTS);
+    return true;
+  }
+  return false;
+}
+
+function restoreModernParticipantSheetNameV2_() {
+  const child = findSelectedEventSheetV2_();
+  if (!child) return;
+  const legacy = child.getSheetByName(EVENT_SHEET.SHEETS.GUESTS);
+  const modern = child.getSheetByName(EVENT_PARTICIPANT_SHEET_V2);
+  if (legacy && !modern) legacy.setName(EVENT_PARTICIPANT_SHEET_V2);
 }
 
 function findSelectedEventSheetV2_() {
