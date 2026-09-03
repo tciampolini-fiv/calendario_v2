@@ -11,6 +11,7 @@ function prepareEventSheetForSelectedEventV2() {
   refreshTasksV3FromBackend_(eventId,event,child);
   refreshExpensesV3FromBackend_(eventId,event,child,folder.folderId);
   refreshParticipantsV2FromBackend_(eventId,event,child);
+  hideEventSheetTechnicalColumnsV3_(child);
   setEventSheetLink_(event._row, child.getUrl());
   writeMeta_(child.getSheetByName(EVENT_SHEET.SHEETS.META),{
     LAST_SYNC:Utilities.formatDate(new Date(),APP.TZ,'dd/MM/yyyy HH:mm'),
@@ -48,6 +49,7 @@ function syncSelectedEventSheetToCalendarV2() {
   refreshTasksV3FromBackend_(eventId,event,child);
   refreshExpensesV3FromBackend_(eventId,event,child,folder.folderId);
   refreshParticipantsV2FromBackend_(eventId,event,child);
+  hideEventSheetTechnicalColumnsV3_(child);
 
   setEventSheetLink_(event._row, child.getUrl());
   writeMeta_(child.getSheetByName(EVENT_SHEET.SHEETS.META),{
@@ -124,4 +126,29 @@ function migrateLegacyEventSheetToV3_(eventId,event,child,folderId) {
   refreshTasksV3FromBackend_(eventId,event,child);
   refreshExpensesV3FromBackend_(eventId,event,child,folderId);
   ensureParticipantV2Structure_(child);
+  hideEventSheetTechnicalColumnsV3_(child);
+}
+
+function hideEventSheetTechnicalColumnsV3_(child) {
+  const tasks = child.getSheetByName(EVENT_SHEET.SHEETS.TASKS);
+  if (tasks) {
+    tasks.showColumns(1,TASKS_V3.VISIBLE_COLS);
+    if (tasks.getMaxColumns() > TASKS_V3.VISIBLE_COLS) {
+      tasks.hideColumns(TASKS_V3.VISIBLE_COLS + 1, tasks.getMaxColumns() - TASKS_V3.VISIBLE_COLS);
+    }
+  }
+  const expenses = child.getSheetByName(EVENT_SHEET.SHEETS.EXPENSES);
+  if (expenses) {
+    expenses.showColumns(1,EXPENSES_V3.VISIBLE_COLS);
+    if (expenses.getMaxColumns() > EXPENSES_V3.VISIBLE_COLS) {
+      expenses.hideColumns(EXPENSES_V3.VISIBLE_COLS + 1, expenses.getMaxColumns() - EXPENSES_V3.VISIBLE_COLS);
+    }
+  }
+  const participants = child.getSheetByName(PARTICIPANTS_V2.SHEET);
+  if (participants) {
+    participants.showColumns(1,PARTICIPANTS_V2.VISIBLE_COLS);
+    if (participants.getMaxColumns() > PARTICIPANTS_V2.VISIBLE_COLS) {
+      participants.hideColumns(PARTICIPANTS_V2.VISIBLE_COLS + 1, participants.getMaxColumns() - PARTICIPANTS_V2.VISIBLE_COLS);
+    }
+  }
 }
