@@ -108,5 +108,5 @@ function buildOutstandingExpenseFormulaV2_(row) {
     "'_SPESE'!$L$2:$L$1005<>\"INVIATO IN AMMINISTRAZIONE\";" +
     "'_SPESE'!$L$2:$L$1005<>\"CHIUSO\";" +
     "'_SPESE'!$L$2:$L$1005<>\"PAGATO\";" +
-    "'_SPESE'!$L$2:$L$1005<>\"RIMBORSATO\"));0))';
+    "'_SPESE'!$L$2:$L$1005<>\"RIMBORSATO\"));0))";
 }
