@@ -6,9 +6,6 @@ function onOpen() {
     .addSeparator()
     .addItem('Crea cartella di lavoro', 'createWorkFolderForSelectedEvent')
     .addItem('Genera documenti evento', 'generateDocumentsForSelectedEvent')
-    .addSeparator()
-    .addItem('Genera checklist evento', 'generateChecklistForSelectedEvent')
-    .addItem('Ripulisci checklist eventi attivi/futuri', 'rebuildCurrentAndFutureStandardChecklists')
     .addToUi();
 }
 
