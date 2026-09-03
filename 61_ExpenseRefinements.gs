@@ -1,112 +1,127 @@
-const EVENT_PARTICIPANT_SHEET_V2 = 'Partecipanti';
-
 function prepareEventSheetForSelectedEventV2() {
-  const result = prepareEventSheetForSelectedEvent();
-  const event = selectedEvent_();
-  const eventId = ensureEventId_(event);
-  const child = findSelectedEventSheetV2_();
-  if (child) {
-    ensureParticipantsBackendHeadersV2_();
-    refreshParticipantsV2FromBackend_(eventId,event,child);
-    refineExpenseSheetV2_(child);
-    const legacy = child.getSheetByName(EVENT_SHEET.SHEETS.GUESTS);
-    if (legacy) legacy.hideSheet();
-  }
-  applyOutstandingExpenseFormulaV2_();
-  return result;
-}
-
-function syncSelectedEventSheetToCalendarV2() {
-  const result = syncSelectedEventSheetToCalendar();
-  const event = selectedEvent_();
-  const eventId = ensureEventId_(event);
-  const child = findSelectedEventSheetV2_();
-  if (child) {
-    syncParticipantsV2ToBackend_(eventId,event,child);
-    refreshParticipantsV2FromBackend_(eventId,event,child);
-    refineExpenseSheetV2_(child);
-    const legacy = child.getSheetByName(EVENT_SHEET.SHEETS.GUESTS);
-    if (legacy) legacy.hideSheet();
-  }
-  applyOutstandingExpenseFormulaV2_();
-  return result;
-}
-
-function findSelectedEventSheetV2_() {
-  try {
-    const event = selectedEvent_();
-    const eventId = ensureEventId_(event);
-    const folder = createWorkFolderForEvent_(eventId, event, event._row);
-    return findEventSheet_(eventId, event, folder.folderId);
-  } catch (e) {
-    return null;
-  }
-}
-
-function getParticipantSheetV2_(child) {
-  return child.getSheetByName(EVENT_PARTICIPANT_SHEET_V2) || child.getSheetByName(EVENT_SHEET.SHEETS.GUESTS);
-}
-
-function refineSelectedEventSheetV2_() {
   const event = selectedEvent_();
   const eventId = ensureEventId_(event);
   const folder = createWorkFolderForEvent_(eventId, event, event._row);
-  const child = findEventSheet_(eventId, event, folder.folderId);
-  if (!child) return;
+  const result = getOrCreateEventSheetV3_(eventId, event, folder.folderId);
+  const child = result.spreadsheet;
+
+  migrateLegacyEventSheetToV3_(eventId,event,child,folder.folderId);
+  ensureChecklistBackendHeadersV3_();
   ensureParticipantsBackendHeadersV2_();
+  refreshTasksV3FromBackend_(eventId,event,child);
+  refreshExpensesV3FromBackend_(eventId,event,child,folder.folderId);
   refreshParticipantsV2FromBackend_(eventId,event,child);
-  refineExpenseSheetV2_(child);
-  const legacy = child.getSheetByName(EVENT_SHEET.SHEETS.GUESTS);
-  if (legacy) legacy.hideSheet();
-}
+  setEventSheetLink_(event._row, child.getUrl());
+  writeMeta_(child.getSheetByName(EVENT_SHEET.SHEETS.META),{
+    LAST_SYNC:Utilities.formatDate(new Date(),APP.TZ,'dd/MM/yyyy HH:mm'),
+    SYNC_VERSION:'3'
+  });
+  SpreadsheetApp.flush();
 
-function refineExpenseSheetV2_(child) {
-  const sheet = child.getSheetByName(EVENT_SHEET.SHEETS.EXPENSES);
-  if (!sheet) return;
-
-  // J e' testo (PROMEMORIA 2), non una data.
-  sheet.getRange('J2:J1000').setNumberFormat('@');
-
-  // Ripulisce eventuali vecchie validazioni/formati rimasti nelle colonne tecniche nascoste.
-  if (sheet.getMaxColumns() >= 19) {
-    sheet.getRange('L2:S1000').clearDataValidations();
-    sheet.getRange('L2:P1000').setNumberFormat('@');
-    sheet.getRange('Q2:S1000').setNumberFormat('dd/MM/yyyy');
-  }
-}
-
-function applyOutstandingExpenseFormulaV2_() {
-  const sheet = sh_(APP.SHEETS.CALENDAR);
-  const map = headerMap_(sheet);
-  const idCol = map[APP.CALENDAR_HEADERS.ID];
-  const dueCol = map[APP.CALENDAR_HEADERS.TO_PAY];
-  if (!idCol || !dueCol) return;
-
-  const firstRow = 2;
-  const lastRow = Math.max(sheet.getMaxRows(), 2);
-  const firstFormula = buildOutstandingExpenseFormulaV2_(firstRow);
-  sheet.getRange(firstRow, dueCol).setFormula(firstFormula);
-  sheet.getRange(firstRow, dueCol).copyTo(
-    sheet.getRange(firstRow, dueCol, lastRow - firstRow + 1, 1),
-    SpreadsheetApp.CopyPasteType.PASTE_FORMULA,
-    false
+  SpreadsheetApp.getUi().alert(
+    result.created ? 'Scheda evento creata' : 'Scheda evento aggiornata',
+    'La scheda evento usa ora Attività, Spese e Partecipanti. Aprila dalla colonna SCHEDA EVENTO.',
+    SpreadsheetApp.getUi().ButtonSet.OK
   );
+  return {created:result.created,id:child.getId(),url:child.getUrl()};
 }
 
-function buildOutstandingExpenseFormulaV2_(row) {
-  const a = '$A' + row;
-  return '=IF(' + a + '="";"";IFERROR(SUM(FILTER(' +
-    "'_SPESE'!$J$2:$J$1005;" +
-    "'_SPESE'!$B$2:$B$1005=" + a + ';' +
-    "'_SPESE'!$J$2:$J$1005<>0;" +
-    "'_SPESE'!$L$2:$L$1005<>\"PAGATO - FATTURA\";" +
-    "'_SPESE'!$L$2:$L$1005<>\"PAGATO - AFOR\";" +
-    "'_SPESE'!$L$2:$L$1005<>\"PAGAMENTO FATTURA\";" +
-    "'_SPESE'!$L$2:$L$1005<>\"PAGAMENTO AFOR\";" +
-    "'_SPESE'!$L$2:$L$1005<>\"AFOR FATTO\";" +
-    "'_SPESE'!$L$2:$L$1005<>\"PAGATO CON CC\";" +
-    "'_SPESE'!$L$2:$L$1005<>\"INVIATO IN AMMINISTRAZIONE\";" +
-    "'_SPESE'!$L$2:$L$1005<>\"CHIUSO\";" +
-    "'_SPESE'!$L$2:$L$1005<>\"PAGATO\";" +
-    "'_SPESE'!$L$2:$L$1005<>\"RIMBORSATO\"));0))";
+function syncSelectedEventSheetToCalendarV2() {
+  const event = selectedEvent_();
+  const eventId = ensureEventId_(event);
+  const folder = createWorkFolderForEvent_(eventId, event, event._row);
+  const result = getOrCreateEventSheetV3_(eventId, event, folder.folderId);
+  const child = result.spreadsheet;
+  validateEventSheetIdentity_(child,eventId);
+
+  migrateLegacyEventSheetToV3_(eventId,event,child,folder.folderId);
+
+  const counts = {
+    tasks: syncTasksV3ToBackend_(eventId,event,child),
+    expenses: syncExpensesV3ToBackend_(eventId,event,child),
+    participants: syncParticipantsV2ToBackend_(eventId,event,child)
+  };
+
+  seedPresenceCheckTaskV3_(eventId,event,child);
+  ensureTaskNumbersAndDefaultDependenciesV3_(eventId,event);
+  recomputeTaskDependenciesV3_(eventId,event);
+  refreshTasksV3FromBackend_(eventId,event,child);
+  refreshExpensesV3FromBackend_(eventId,event,child,folder.folderId);
+  refreshParticipantsV2FromBackend_(eventId,event,child);
+
+  setEventSheetLink_(event._row, child.getUrl());
+  writeMeta_(child.getSheetByName(EVENT_SHEET.SHEETS.META),{
+    LAST_SYNC:Utilities.formatDate(new Date(),APP.TZ,'dd/MM/yyyy HH:mm'),
+    SYNC_VERSION:'3'
+  });
+  SpreadsheetApp.flush();
+
+  SpreadsheetApp.getUi().alert(
+    'Calendario aggiornato',
+    'Attività: ' + counts.tasks + '\nSpese: ' + counts.expenses + '\nPartecipanti: ' + counts.participants,
+    SpreadsheetApp.getUi().ButtonSet.OK
+  );
+  return counts;
+}
+
+function getOrCreateEventSheetV3_(eventId,event,folderId) {
+  let child = findEventSheet_(eventId,event,folderId);
+  let created = false;
+  if (!child) {
+    child = SpreadsheetApp.create(buildEventSheetName_(event));
+    child.setSpreadsheetLocale('it_IT');
+    child.setSpreadsheetTimeZone(APP.TZ);
+    DriveApp.getFileById(child.getId()).moveTo(DriveApp.getFolderById(folderId));
+    created = true;
+  }
+  ensureEventSheetBaseV3_(child,eventId,folderId,event);
+  return {spreadsheet:child,created:created};
+}
+
+function ensureEventSheetBaseV3_(child,eventId,folderId,event) {
+  child.setSpreadsheetLocale('it_IT');
+  child.setSpreadsheetTimeZone(APP.TZ);
+
+  let tasks = child.getSheetByName(EVENT_SHEET.SHEETS.TASKS);
+  if (!tasks) {
+    const first = child.getSheets()[0];
+    if (child.getSheets().length === 1 && first.getLastRow() === 0) {
+      first.setName(EVENT_SHEET.SHEETS.TASKS);
+      tasks = first;
+    } else {
+      tasks = child.insertSheet(EVENT_SHEET.SHEETS.TASKS,0);
+    }
+  }
+  if (!child.getSheetByName(EVENT_SHEET.SHEETS.EXPENSES)) child.insertSheet(EVENT_SHEET.SHEETS.EXPENSES);
+  if (!child.getSheetByName(PARTICIPANTS_V2.SHEET)) child.insertSheet(PARTICIPANTS_V2.SHEET);
+  let meta = child.getSheetByName(EVENT_SHEET.SHEETS.META);
+  if (!meta) meta = child.insertSheet(EVENT_SHEET.SHEETS.META);
+
+  writeMeta_(meta,{
+    EVENT_ID:eventId,
+    MASTER_SPREADSHEET_ID:APP.SPREADSHEET_ID,
+    EVENT_FOLDER_ID:folderId,
+    EVENT_SHEET_ID:child.getId(),
+    SYNC_VERSION:'3',
+    EVENT_LABEL:buildEventSheetLabel_(event)
+  });
+  meta.hideSheet();
+}
+
+function migrateLegacyEventSheetToV3_(eventId,event,child,folderId) {
+  const tasks = child.getSheetByName(EVENT_SHEET.SHEETS.TASKS);
+  if (isLegacyTaskSheetV3_(tasks)) {
+    syncTasksFromEventSheet_(eventId,child);
+  }
+
+  const expenses = child.getSheetByName(EVENT_SHEET.SHEETS.EXPENSES);
+  if (isLegacyExpenseSheetV3_(expenses)) {
+    syncExpensesFromEventSheet_(eventId,child);
+  }
+
+  ensureChecklistBackendHeadersV3_();
+  ensureParticipantsBackendHeadersV2_();
+  refreshTasksV3FromBackend_(eventId,event,child);
+  refreshExpensesV3FromBackend_(eventId,event,child,folderId);
+  ensureParticipantV2Structure_(child);
 }
