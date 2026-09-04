@@ -9,14 +9,12 @@ function prepareEventSheetForSelectedEventV2() {
   ensureChecklistBackendHeadersV3_();
   ensureParticipantsBackendHeadersV2_();
   refreshTasksV4FromBackend_(eventId,event,child);
-  refreshExpensesV3FromBackend_(eventId,event,child,folder.folderId);
-  refreshParticipantsV2FromBackend_(eventId,event,child);
+  refreshParticipantsV3FromBackend_(eventId,event,child);
+  refreshExpensesV4FromBackend_(eventId,event,child,folder.folderId);
+  ensureEventSheetEditTriggerV5_(child);
   hideEventSheetTechnicalColumnsV3_(child);
   setEventSheetLink_(event._row, child.getUrl());
-  writeMeta_(child.getSheetByName(EVENT_SHEET.SHEETS.META),{
-    LAST_SYNC:Utilities.formatDate(new Date(),APP.TZ,'dd/MM/yyyy HH:mm'),
-    SYNC_VERSION:'4'
-  });
+  writeEventMetaV5_(child,eventId,event,folder.folderId);
   SpreadsheetApp.flush();
 
   SpreadsheetApp.getUi().alert(
@@ -37,24 +35,24 @@ function syncSelectedEventSheetToCalendarV2() {
 
   migrateLegacyEventSheetToV3_(eventId,event,child,folder.folderId);
 
+  // Prima i partecipanti: i rimborsi del foglio Partecipanti diventano poi righe Spese.
+  const participantCount = syncParticipantsV3ToBackend_(eventId,event,child);
   const counts = {
     tasks: syncTasksV4ToBackend_(eventId,event,child),
-    expenses: syncExpensesV3ToBackend_(eventId,event,child),
-    participants: syncParticipantsV2ToBackend_(eventId,event,child)
+    participants: participantCount,
+    expenses: syncExpensesV4ToBackend_(eventId,event,child)
   };
 
   seedPresenceCheckTaskV3_(eventId,event,child);
   ensureTaskNumbersAndDefaultDependenciesV3_(eventId,event);
   refreshTasksV4FromBackend_(eventId,event,child);
-  refreshExpensesV3FromBackend_(eventId,event,child,folder.folderId);
-  refreshParticipantsV2FromBackend_(eventId,event,child);
+  refreshParticipantsV3FromBackend_(eventId,event,child);
+  refreshExpensesV4FromBackend_(eventId,event,child,folder.folderId);
+  ensureEventSheetEditTriggerV5_(child);
   hideEventSheetTechnicalColumnsV3_(child);
 
   setEventSheetLink_(event._row, child.getUrl());
-  writeMeta_(child.getSheetByName(EVENT_SHEET.SHEETS.META),{
-    LAST_SYNC:Utilities.formatDate(new Date(),APP.TZ,'dd/MM/yyyy HH:mm'),
-    SYNC_VERSION:'4'
-  });
+  writeEventMetaV5_(child,eventId,event,folder.folderId);
   SpreadsheetApp.flush();
 
   SpreadsheetApp.getUi().alert(
@@ -63,6 +61,31 @@ function syncSelectedEventSheetToCalendarV2() {
     SpreadsheetApp.getUi().ButtonSet.OK
   );
   return counts;
+}
+
+function writeEventMetaV5_(child,eventId,event,folderId) {
+  const meta = child.getSheetByName(EVENT_SHEET.SHEETS.META);
+  const start = event[APP.CALENDAR_HEADERS.START];
+  const end = event[APP.CALENDAR_HEADERS.END];
+  writeMeta_(meta,{
+    EVENT_ID:eventId,
+    MASTER_SPREADSHEET_ID:APP.SPREADSHEET_ID,
+    EVENT_FOLDER_ID:folderId,
+    EVENT_SHEET_ID:child.getId(),
+    SYNC_VERSION:'5',
+    EVENT_LABEL:buildEventSheetLabel_(event),
+    EVENT_TYPE:String(event[APP.CALENDAR_HEADERS.TYPE]||''),
+    EVENT_CLASS:String(event[APP.CALENDAR_HEADERS.CLASS]||''),
+    EVENT_LOCATION:String(event[APP.CALENDAR_HEADERS.LOCATION]||''),
+    EVENT_ZONE:String(event[APP.CALENDAR_HEADERS.ZONE]||''),
+    EVENT_CLUB:String(event[APP.CALENDAR_HEADERS.CLUB]||''),
+    EVENT_TECHNICIANS:String(event[APP.CALENDAR_HEADERS.TECHNICIANS]||''),
+    EVENT_LODGING:String(event[APP.CALENDAR_HEADERS.LODGING]||''),
+    EVENT_COMMITMENT:String(event[APP.CALENDAR_HEADERS.COMMITMENT]||''),
+    EVENT_START:start instanceof Date ? Utilities.formatDate(start,APP.TZ,'yyyy-MM-dd') : '',
+    EVENT_END:end instanceof Date ? Utilities.formatDate(end,APP.TZ,'yyyy-MM-dd') : '',
+    LAST_SYNC:Utilities.formatDate(new Date(),APP.TZ,'dd/MM/yyyy HH:mm')
+  });
 }
 
 function getOrCreateEventSheetV3_(eventId,event,folderId) {
@@ -94,37 +117,31 @@ function ensureEventSheetBaseV3_(child,eventId,folderId,event) {
     }
   }
   if (!child.getSheetByName(EVENT_SHEET.SHEETS.EXPENSES)) child.insertSheet(EVENT_SHEET.SHEETS.EXPENSES);
-  if (!child.getSheetByName(PARTICIPANTS_V2.SHEET)) child.insertSheet(PARTICIPANTS_V2.SHEET);
+  if (!child.getSheetByName(PARTICIPANTS_V3.SHEET)) child.insertSheet(PARTICIPANTS_V3.SHEET);
   let meta = child.getSheetByName(EVENT_SHEET.SHEETS.META);
   if (!meta) meta = child.insertSheet(EVENT_SHEET.SHEETS.META);
 
-  writeMeta_(meta,{
-    EVENT_ID:eventId,
-    MASTER_SPREADSHEET_ID:APP.SPREADSHEET_ID,
-    EVENT_FOLDER_ID:folderId,
-    EVENT_SHEET_ID:child.getId(),
-    SYNC_VERSION:'4',
-    EVENT_LABEL:buildEventSheetLabel_(event)
-  });
+  writeEventMetaV5_(child,eventId,event,folderId);
   meta.hideSheet();
 }
 
 function migrateLegacyEventSheetToV3_(eventId,event,child,folderId) {
   const tasks = child.getSheetByName(EVENT_SHEET.SHEETS.TASKS);
-  if (isLegacyTaskSheetV3_(tasks)) {
-    syncTasksFromEventSheet_(eventId,child);
-  }
+  if (isLegacyTaskSheetV3_(tasks)) syncTasksFromEventSheet_(eventId,child);
 
   const expenses = child.getSheetByName(EVENT_SHEET.SHEETS.EXPENSES);
-  if (isLegacyExpenseSheetV3_(expenses)) {
-    syncExpensesFromEventSheet_(eventId,child);
+  if (isLegacyExpenseSheetV3_(expenses)) syncExpensesFromEventSheet_(eventId,child);
+
+  // Se è ancora la vecchia vista Spese V3, la leggiamo prima di trasformarla nel nuovo cruscotto.
+  if (expenses && normalize_(expenses.getRange('A1').getDisplayValue()) === 'IMPORTO') {
+    syncExpensesV3ToBackend_(eventId,event,child);
   }
 
   ensureChecklistBackendHeadersV3_();
   ensureParticipantsBackendHeadersV2_();
   refreshTasksV4FromBackend_(eventId,event,child);
-  refreshExpensesV3FromBackend_(eventId,event,child,folderId);
-  ensureParticipantV2Structure_(child);
+  refreshParticipantsV3FromBackend_(eventId,event,child);
+  refreshExpensesV4FromBackend_(eventId,event,child,folderId);
   hideEventSheetTechnicalColumnsV3_(child);
 }
 
@@ -138,16 +155,16 @@ function hideEventSheetTechnicalColumnsV3_(child) {
   }
   const expenses = child.getSheetByName(EVENT_SHEET.SHEETS.EXPENSES);
   if (expenses) {
-    expenses.showColumns(1,EXPENSES_V3.VISIBLE_COLS);
-    if (expenses.getMaxColumns() > EXPENSES_V3.VISIBLE_COLS) {
-      expenses.hideColumns(EXPENSES_V3.VISIBLE_COLS + 1, expenses.getMaxColumns() - EXPENSES_V3.VISIBLE_COLS);
+    expenses.showColumns(1,EXPENSES_V4.VISIBLE_COLS);
+    if (expenses.getMaxColumns() > EXPENSES_V4.VISIBLE_COLS) {
+      expenses.hideColumns(EXPENSES_V4.VISIBLE_COLS + 1, expenses.getMaxColumns() - EXPENSES_V4.VISIBLE_COLS);
     }
   }
-  const participants = child.getSheetByName(PARTICIPANTS_V2.SHEET);
+  const participants = child.getSheetByName(PARTICIPANTS_V3.SHEET);
   if (participants) {
-    participants.showColumns(1,PARTICIPANTS_V2.VISIBLE_COLS);
-    if (participants.getMaxColumns() > PARTICIPANTS_V2.VISIBLE_COLS) {
-      participants.hideColumns(PARTICIPANTS_V2.VISIBLE_COLS + 1, participants.getMaxColumns() - PARTICIPANTS_V2.VISIBLE_COLS);
+    participants.showColumns(1,PARTICIPANTS_V3.VISIBLE_COLS);
+    if (participants.getMaxColumns() > PARTICIPANTS_V3.VISIBLE_COLS) {
+      participants.hideColumns(PARTICIPANTS_V3.VISIBLE_COLS + 1, participants.getMaxColumns() - PARTICIPANTS_V3.VISIBLE_COLS);
     }
   }
 }
