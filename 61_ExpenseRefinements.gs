@@ -9,6 +9,7 @@ function prepareEventSheetForSelectedEventV2() {
   ensureChecklistBackendHeadersV3_();
   ensureParticipantsBackendHeadersV2_();
   refreshTasksV4FromBackend_(eventId,event,child);
+  removeNativeTaskTableCompatibility_(child);
   refreshParticipantsV3FromBackend_(eventId,event,child);
   refreshExpensesV4FromBackend_(eventId,event,child,folder.folderId);
   ensureEventSheetEditTriggerV5_(child);
@@ -37,15 +38,19 @@ function syncSelectedEventSheetToCalendarV2() {
 
   // Prima i partecipanti: i rimborsi del foglio Partecipanti diventano poi righe Spese.
   const participantCount = syncParticipantsV3ToBackend_(eventId,event,child);
+  const taskCount = syncTasksV4ToBackend_(eventId,event,child);
+  removeNativeTaskTableCompatibility_(child);
+  const expenseCount = syncExpensesV4ToBackend_(eventId,event,child);
   const counts = {
-    tasks: syncTasksV4ToBackend_(eventId,event,child),
+    tasks: taskCount,
     participants: participantCount,
-    expenses: syncExpensesV4ToBackend_(eventId,event,child)
+    expenses: expenseCount
   };
 
   seedPresenceCheckTaskV3_(eventId,event,child);
   ensureTaskNumbersAndDefaultDependenciesV3_(eventId,event);
   refreshTasksV4FromBackend_(eventId,event,child);
+  removeNativeTaskTableCompatibility_(child);
   refreshParticipantsV3FromBackend_(eventId,event,child);
   refreshExpensesV4FromBackend_(eventId,event,child,folder.folderId);
   ensureEventSheetEditTriggerV5_(child);
@@ -126,6 +131,10 @@ function ensureEventSheetBaseV3_(child,eventId,folderId,event) {
 }
 
 function migrateLegacyEventSheetToV3_(eventId,event,child,folderId) {
+  // Le tabelle native di Sheets possono tipizzare le colonne e bloccare setNumberFormat().
+  // La vista Attività non ha bisogno della tabella nativa: usiamo range, menu e formattazione condizionale.
+  removeNativeTaskTableCompatibility_(child);
+
   const tasks = child.getSheetByName(EVENT_SHEET.SHEETS.TASKS);
   if (isLegacyTaskSheetV3_(tasks)) syncTasksFromEventSheet_(eventId,child);
 
@@ -140,9 +149,30 @@ function migrateLegacyEventSheetToV3_(eventId,event,child,folderId) {
   ensureChecklistBackendHeadersV3_();
   ensureParticipantsBackendHeadersV2_();
   refreshTasksV4FromBackend_(eventId,event,child);
+  removeNativeTaskTableCompatibility_(child);
   refreshParticipantsV3FromBackend_(eventId,event,child);
   refreshExpensesV4FromBackend_(eventId,event,child,folderId);
   hideEventSheetTechnicalColumnsV3_(child);
+}
+
+function removeNativeTaskTableCompatibility_(child) {
+  try {
+    const sheet = child.getSheetByName(EVENT_SHEET.SHEETS.TASKS);
+    if (!sheet) return;
+    const ss = Sheets.Spreadsheets.get(child.getId(), {
+      fields: 'sheets(properties(sheetId),tables(tableId))'
+    });
+    const info = (ss.sheets || []).find(s =>
+      s.properties && Number(s.properties.sheetId) === Number(sheet.getSheetId())
+    );
+    const tables = info && info.tables ? info.tables : [];
+    if (!tables.length) return;
+    Sheets.Spreadsheets.batchUpdate({
+      requests: tables.map(t => ({deleteTable:{tableId:t.tableId}}))
+    }, child.getId());
+  } catch (e) {
+    console.log('Rimozione tabella nativa Attività non necessaria/non riuscita: ' + e.message);
+  }
 }
 
 function hideEventSheetTechnicalColumnsV3_(child) {
