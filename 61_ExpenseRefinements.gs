@@ -8,20 +8,20 @@ function prepareEventSheetForSelectedEventV2() {
   migrateLegacyEventSheetToV3_(eventId,event,child,folder.folderId);
   ensureChecklistBackendHeadersV3_();
   ensureParticipantsBackendHeadersV2_();
-  refreshTasksV3FromBackend_(eventId,event,child);
+  refreshTasksV4FromBackend_(eventId,event,child);
   refreshExpensesV3FromBackend_(eventId,event,child,folder.folderId);
   refreshParticipantsV2FromBackend_(eventId,event,child);
   hideEventSheetTechnicalColumnsV3_(child);
   setEventSheetLink_(event._row, child.getUrl());
   writeMeta_(child.getSheetByName(EVENT_SHEET.SHEETS.META),{
     LAST_SYNC:Utilities.formatDate(new Date(),APP.TZ,'dd/MM/yyyy HH:mm'),
-    SYNC_VERSION:'3'
+    SYNC_VERSION:'4'
   });
   SpreadsheetApp.flush();
 
   SpreadsheetApp.getUi().alert(
     result.created ? 'Scheda evento creata' : 'Scheda evento aggiornata',
-    'La scheda evento usa ora Attività, Spese e Partecipanti. Aprila dalla colonna SCHEDA EVENTO.',
+    'La scheda evento usa Attività, Spese e Partecipanti. Aprila dalla colonna SCHEDA EVENTO.',
     SpreadsheetApp.getUi().ButtonSet.OK
   );
   return {created:result.created,id:child.getId(),url:child.getUrl()};
@@ -38,15 +38,14 @@ function syncSelectedEventSheetToCalendarV2() {
   migrateLegacyEventSheetToV3_(eventId,event,child,folder.folderId);
 
   const counts = {
-    tasks: syncTasksV3ToBackend_(eventId,event,child),
+    tasks: syncTasksV4ToBackend_(eventId,event,child),
     expenses: syncExpensesV3ToBackend_(eventId,event,child),
     participants: syncParticipantsV2ToBackend_(eventId,event,child)
   };
 
   seedPresenceCheckTaskV3_(eventId,event,child);
   ensureTaskNumbersAndDefaultDependenciesV3_(eventId,event);
-  recomputeTaskDependenciesV3_(eventId,event);
-  refreshTasksV3FromBackend_(eventId,event,child);
+  refreshTasksV4FromBackend_(eventId,event,child);
   refreshExpensesV3FromBackend_(eventId,event,child,folder.folderId);
   refreshParticipantsV2FromBackend_(eventId,event,child);
   hideEventSheetTechnicalColumnsV3_(child);
@@ -54,7 +53,7 @@ function syncSelectedEventSheetToCalendarV2() {
   setEventSheetLink_(event._row, child.getUrl());
   writeMeta_(child.getSheetByName(EVENT_SHEET.SHEETS.META),{
     LAST_SYNC:Utilities.formatDate(new Date(),APP.TZ,'dd/MM/yyyy HH:mm'),
-    SYNC_VERSION:'3'
+    SYNC_VERSION:'4'
   });
   SpreadsheetApp.flush();
 
@@ -104,7 +103,7 @@ function ensureEventSheetBaseV3_(child,eventId,folderId,event) {
     MASTER_SPREADSHEET_ID:APP.SPREADSHEET_ID,
     EVENT_FOLDER_ID:folderId,
     EVENT_SHEET_ID:child.getId(),
-    SYNC_VERSION:'3',
+    SYNC_VERSION:'4',
     EVENT_LABEL:buildEventSheetLabel_(event)
   });
   meta.hideSheet();
@@ -123,7 +122,7 @@ function migrateLegacyEventSheetToV3_(eventId,event,child,folderId) {
 
   ensureChecklistBackendHeadersV3_();
   ensureParticipantsBackendHeadersV2_();
-  refreshTasksV3FromBackend_(eventId,event,child);
+  refreshTasksV4FromBackend_(eventId,event,child);
   refreshExpensesV3FromBackend_(eventId,event,child,folderId);
   ensureParticipantV2Structure_(child);
   hideEventSheetTechnicalColumnsV3_(child);
@@ -132,9 +131,9 @@ function migrateLegacyEventSheetToV3_(eventId,event,child,folderId) {
 function hideEventSheetTechnicalColumnsV3_(child) {
   const tasks = child.getSheetByName(EVENT_SHEET.SHEETS.TASKS);
   if (tasks) {
-    tasks.showColumns(1,TASKS_V3.VISIBLE_COLS);
-    if (tasks.getMaxColumns() > TASKS_V3.VISIBLE_COLS) {
-      tasks.hideColumns(TASKS_V3.VISIBLE_COLS + 1, tasks.getMaxColumns() - TASKS_V3.VISIBLE_COLS);
+    tasks.showColumns(1,TASKS_V4.VISIBLE_COLS);
+    if (tasks.getMaxColumns() > TASKS_V4.VISIBLE_COLS) {
+      tasks.hideColumns(TASKS_V4.VISIBLE_COLS + 1, tasks.getMaxColumns() - TASKS_V4.VISIBLE_COLS);
     }
   }
   const expenses = child.getSheetByName(EVENT_SHEET.SHEETS.EXPENSES);
