@@ -5,6 +5,7 @@ const TASKS_V3 = Object.freeze({
   ]),
   VISIBLE_COLS: 7,
   TECH_START_COL: 8,
+  ENTRY_END_ROW: 120,
   STATUS: Object.freeze(['DA FARE','IN ATTESA','FATTO']),
   PROCESSES: Object.freeze(['HOTEL','GOMMONE','PASTI','VIAGGIO TECNICO','CONVOCAZIONI','CIRCOLO','ISCRIZIONI','TRASPORTO','ALTRO']),
   COMMON_TASKS: Object.freeze([
@@ -30,6 +31,9 @@ function ensureTaskV3Structure_(child) {
   if (sheet.getMaxColumns() < TASKS_V3.HEADERS.length) {
     sheet.insertColumnsAfter(sheet.getMaxColumns(), TASKS_V3.HEADERS.length - sheet.getMaxColumns());
   }
+  if (sheet.getMaxRows() < TASKS_V3.ENTRY_END_ROW) {
+    sheet.insertRowsAfter(sheet.getMaxRows(), TASKS_V3.ENTRY_END_ROW - sheet.getMaxRows());
+  }
 
   const isV3 = normalize_(sheet.getRange('A1').getDisplayValue()) === 'N.';
   if (!isV3) {
@@ -46,48 +50,94 @@ function ensureTaskV3Structure_(child) {
   sheet.getRange(1,1,1,TASKS_V3.HEADERS.length)
     .setFontWeight('bold').setBackground('#eeeeee').setVerticalAlignment('middle').setWrap(true);
   [55,145,285,95,115,105,330].forEach((w,i)=>sheet.setColumnWidth(i+1,w));
-  sheet.getRange('A2:G999').setVerticalAlignment('top').setWrap(true);
-  sheet.getRange('A2:A999').setNumberFormat('0');
-  sheet.getRange('D2:D999').setNumberFormat('0');
-  sheet.getRange('F2:F999').setNumberFormat('dd/MM/yyyy');
-  sheet.getRange('L2:M999').setNumberFormat('dd/MM/yyyy');
+  sheet.getRange('A2:G' + TASKS_V3.ENTRY_END_ROW).setVerticalAlignment('top').setWrap(true);
+  sheet.getRange('A2:A' + TASKS_V3.ENTRY_END_ROW).setNumberFormat('0');
+  sheet.getRange('D2:D' + TASKS_V3.ENTRY_END_ROW).setNumberFormat('0');
+  sheet.getRange('F2:F' + TASKS_V3.ENTRY_END_ROW).setNumberFormat('dd/MM/yyyy');
+  sheet.getRange('L2:M' + TASKS_V3.ENTRY_END_ROW).setNumberFormat('dd/MM/yyyy');
 
-  sheet.getRange('A1').setNote('Numero stabile della task. Non dipende dal numero di riga.');
-  sheet.getRange('C1').setNote('Puoi scegliere una voce frequente dal menu oppure scrivere liberamente una nuova task.');
-  sheet.getRange('D1').setNote('Indica il numero della task da cui questa dipende. Esempio: 4 = dipende dalla task n. 4.');
+  sheet.getRange('A1').setNote('Numero stabile della task. Le righe vuote vengono numerate automaticamente appena inserisci l attività.');
+  sheet.getRange('C1').setNote('Puoi scegliere una voce frequente dal menu oppure scrivere liberamente una nuova task. Per aggiungere una task usa semplicemente la prima riga vuota.');
+  sheet.getRange('D1').setNote('Indica il numero della task da cui questa dipende. Il menu legge direttamente la colonna N. e quindi si aggiorna automaticamente.');
+  sheet.getRange('E1').setNote('Per le task dipendenti lo stato è automatico: IN ATTESA finché la task precedente non è FATTO, poi DA FARE. Puoi sempre sovrascriverlo manualmente.');
   sheet.getRange('F1').setNote('Scadenza della task. Per Check conferma presenze inserisci qui la data limite indicata nella convocazione.');
 
   sheet.setConditionalFormatRules([
     SpreadsheetApp.newConditionalFormatRule().whenFormulaSatisfied('=$E2="FATTO"')
-      .setBackground('#d9ead3').setRanges([sheet.getRange('A2:G999')]).build(),
+      .setBackground('#d9ead3').setRanges([sheet.getRange('A2:G' + TASKS_V3.ENTRY_END_ROW)]).build(),
     SpreadsheetApp.newConditionalFormatRule().whenFormulaSatisfied('=AND($E2="DA FARE",$F2<>"",$F2<TODAY())')
-      .setBackground('#f4cccc').setRanges([sheet.getRange('A2:G999')]).build(),
+      .setBackground('#f4cccc').setRanges([sheet.getRange('A2:G' + TASKS_V3.ENTRY_END_ROW)]).build(),
     SpreadsheetApp.newConditionalFormatRule().whenFormulaSatisfied('=$E2="DA FARE"')
-      .setBackground('#fff2cc').setRanges([sheet.getRange('A2:G999')]).build(),
+      .setBackground('#fff2cc').setRanges([sheet.getRange('A2:G' + TASKS_V3.ENTRY_END_ROW)]).build(),
     SpreadsheetApp.newConditionalFormatRule().whenFormulaSatisfied('=$E2="IN ATTESA"')
-      .setBackground('#d9eaf7').setRanges([sheet.getRange('A2:G999')]).build()
+      .setBackground('#d9eaf7').setRanges([sheet.getRange('A2:G' + TASKS_V3.ENTRY_END_ROW)]).build()
   ]);
   return sheet;
 }
 
-function applyTaskV3Validations_(sheet, taskNumbers) {
+function applyTaskV3Validations_(sheet) {
   const activityChoices = getTaskPresetChoicesV3_();
-  sheet.getRange('B2:B999').setDataValidation(
+  sheet.getRange('B2:B' + TASKS_V3.ENTRY_END_ROW).setDataValidation(
     SpreadsheetApp.newDataValidation().requireValueInList(TASKS_V3.PROCESSES,true).setAllowInvalid(true).build()
   );
-  sheet.getRange('C2:C999').setDataValidation(
+  sheet.getRange('C2:C' + TASKS_V3.ENTRY_END_ROW).setDataValidation(
     SpreadsheetApp.newDataValidation().requireValueInList(activityChoices,true).setAllowInvalid(true).build()
   );
-  if (taskNumbers.length) {
-    sheet.getRange('D2:D999').setDataValidation(
-      SpreadsheetApp.newDataValidation().requireValueInList(taskNumbers.map(String),true).setAllowInvalid(true).build()
-    );
-  } else {
-    sheet.getRange('D2:D999').clearDataValidations();
-  }
-  sheet.getRange('E2:E999').setDataValidation(
+  sheet.getRange('D2:D' + TASKS_V3.ENTRY_END_ROW).setDataValidation(
+    SpreadsheetApp.newDataValidation()
+      .requireValueInRange(sheet.getRange('A2:A' + TASKS_V3.ENTRY_END_ROW),true)
+      .setAllowInvalid(true)
+      .build()
+  );
+  sheet.getRange('E2:E' + TASKS_V3.ENTRY_END_ROW).setDataValidation(
     SpreadsheetApp.newDataValidation().requireValueInList(TASKS_V3.STATUS,true).setAllowInvalid(false).build()
   );
+}
+
+function taskLiveStatusFormulaV3_(row) {
+  return '=IF(C' + row + '="";"";' +
+    'IF(D' + row + '="";"DA FARE";' +
+      'IF(D' + row + '=A' + row + ';"IN ATTESA";' +
+        'IFERROR(' +
+          'IF(INDEX($E$2:$E$' + TASKS_V3.ENTRY_END_ROW + ';MATCH(D' + row + ';$A$2:$A$' + TASKS_V3.ENTRY_END_ROW + ';0))="FATTO";' +
+            'IF(AND(J' + row + '="CHECK_CONFERME";OR(F' + row + '="";F' + row + '>TODAY()));"IN ATTESA";"DA FARE");' +
+            '"IN ATTESA"' +
+          ');' +
+          '"IN ATTESA"' +
+        ')' +
+      ')' +
+    ')' +
+  ')';
+}
+
+function taskAutoNumberFormulaV3_(row) {
+  return '=IF(C' + row + '="";"";MAX($A$1:A' + (row - 1) + ')+1)';
+}
+
+function prepareTaskEntryRowsV3_(sheet, writtenRows) {
+  applyTaskV3Validations_(sheet);
+  const firstBlank = Math.max(2, writtenRows + 2);
+  if (firstBlank > TASKS_V3.ENTRY_END_ROW) return;
+
+  const numberFormulas = [];
+  const statusFormulas = [];
+  for (let row=firstBlank; row<=TASKS_V3.ENTRY_END_ROW; row++) {
+    numberFormulas.push([taskAutoNumberFormulaV3_(row)]);
+    statusFormulas.push([taskLiveStatusFormulaV3_(row)]);
+  }
+  sheet.getRange(firstBlank,1,numberFormulas.length,1).setFormulas(numberFormulas);
+  sheet.getRange(firstBlank,5,statusFormulas.length,1).setFormulas(statusFormulas);
+}
+
+function applyLiveDependencyFormulasV3_(sheet, out) {
+  out.forEach((r, index)=>{
+    const row = index + 2;
+    const dependencyNo = Number(r[3]||0);
+    const status = normalize_(r[4]);
+    const autoBlock = normalize_(r[14]||'');
+    if (!dependencyNo || status === 'FATTO' || autoBlock === 'MANUALE') return;
+    sheet.getRange(row,5).setFormula(taskLiveStatusFormulaV3_(row));
+  });
 }
 
 function getTaskPresetChoicesV3_() {
@@ -283,17 +333,21 @@ function refreshTasksV3FromBackend_(eventId, event, child) {
       r[0]||'', r[8]||'', r[9]||'', r[14]||'', r[11]||'', r[12]||'', r[2]||'', r[15]||''
     ];
   });
-  const clearRows = Math.max(sheet.getLastRow()-1, out.length, 1);
+  const clearRows = Math.max(Math.min(sheet.getLastRow()-1,TASKS_V3.ENTRY_END_ROW-1), out.length, 1);
   sheet.getRange(2,1,clearRows,TASKS_V3.HEADERS.length).clearContent();
   if (out.length) sheet.getRange(2,1,out.length,TASKS_V3.HEADERS.length).setValues(out);
-  applyTaskV3Validations_(sheet, out.map(r=>r[0]).filter(Boolean));
+  applyTaskV3Validations_(sheet);
+  applyLiveDependencyFormulasV3_(sheet,out);
+  prepareTaskEntryRowsV3_(sheet,out.length);
   return out.length;
 }
 
 function syncTasksV3ToBackend_(eventId, event, child) {
   ensureChecklistBackendHeadersV3_();
   const sheet = ensureTaskV3Structure_(child);
-  const values = sheet.getDataRange().getValues();
+  const range = sheet.getRange(1,1,TASKS_V3.ENTRY_END_ROW,TASKS_V3.HEADERS.length);
+  const values = range.getValues();
+  const formulas = range.getFormulas();
   const oldRows = sh_(APP.SHEETS.CHECKLIST).getDataRange().getValues();
   const oldById = {};
   for (let i=1;i<oldRows.length;i++) {
@@ -308,7 +362,7 @@ function syncTasksV3ToBackend_(eventId, event, child) {
     if (!activity) continue;
     const enteredNo = Number(r[0]||0);
     if (enteredNo > maxNo) maxNo = enteredNo;
-    draft.push({sheetRow:i+1, values:r, no:enteredNo});
+    draft.push({sheetRow:i+1, values:r, formulas:formulas[i], no:enteredNo});
   }
   const used = new Set(draft.filter(x=>x.no>0).map(x=>x.no));
   draft.forEach(x=>{
@@ -323,11 +377,13 @@ function syncTasksV3ToBackend_(eventId, event, child) {
   if (duplicateNos.size) throw new Error('Numeri task duplicati: ' + Array.from(duplicateNos).join(', ') + '.');
 
   const idByNo = {};
+  const draftByNo = {};
   draft.forEach(x=>{
     let id = String(x.values[7]||'').trim();
     if (!id) id = 'TASK-' + Utilities.getUuid();
     x.id = id;
     idByNo[x.no] = id;
+    draftByNo[x.no] = x;
   });
 
   const now = new Date();
@@ -346,10 +402,25 @@ function syncTasksV3ToBackend_(eventId, event, child) {
     const source = String(r[8]||'').trim() || (old[8]||'MANUALE');
     const autoKey = String(r[9]||'').trim() || old[9] || inferTaskAutoKeyV3_(r[2]);
     const order = Number(r[13]||0) || x.no * 10;
+    const hasLiveStatusFormula = !!String((x.formulas && x.formulas[4]) || '').trim();
+
+    let autoBlock = '';
+    if (status !== 'FATTO') {
+      if (depNo && hasLiveStatusFormula) {
+        const parent = draftByNo[depNo];
+        const parentDone = parent && normalize_(parent.values[4]) === 'FATTO';
+        if (!parentDone) autoBlock = 'DIPENDENZA';
+        else if (normalize_(autoKey) === 'CHECK_CONFERME' && (!(due instanceof Date) || due > now)) autoBlock = 'DATA';
+      } else if (depNo && !hasLiveStatusFormula) {
+        autoBlock = 'MANUALE';
+      } else if (normalize_(autoKey) === 'RINGRAZIAMENTO_CIRCOLO') {
+        autoBlock = String(r[14]||'').trim() || old[15] || '';
+      }
+    }
 
     rows.push([
       x.id,eventId,order,String(r[2]||'').trim(),String(r[1]||'').trim()||'ALTRO',due,status,
-      old[7]||'',source,autoKey,String(r[6]||'').trim(),completed,now,x.no,depId,String(r[14]||'').trim() || old[15] || ''
+      old[7]||'',source,autoKey,String(r[6]||'').trim(),completed,now,x.no,depId,autoBlock
     ]);
   });
 
