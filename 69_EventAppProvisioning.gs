@@ -11,7 +11,7 @@ function installEventAppForSelectedEvent() {
     const installed = provisionEventBoundScriptV1_(child);
     ui.alert(
       'Funzioni scheda evento installate',
-      'Apri o ricarica la scheda evento. Troverai il menu “Scheda evento” con Importa nuova spesa e Genera documenti.',
+      'Apri o ricarica la scheda evento. Nel menu “Scheda evento” troverai anche “Salva dati nel Calendario”, oltre a Importa nuova spesa e Genera documenti.',
       ui.ButtonSet.OK
     );
     return installed;
@@ -52,7 +52,9 @@ function provisionEventBoundScriptV1_(child) {
     writeMeta_(meta,{EVENT_SCRIPT_ID:scriptId});
   }
 
-  const source = HtmlService.createHtmlOutputFromFile('EventBoundCode').getContent();
+  const baseSource = HtmlService.createHtmlOutputFromFile('EventBoundCode').getContent();
+  const saveSource = HtmlService.createHtmlOutputFromFile('EventBoundSave').getContent();
+  const source = baseSource + '\n\n' + saveSource;
   const manifest = {
     timeZone:APP.TZ,
     exceptionLogging:'STACKDRIVER',
@@ -72,7 +74,7 @@ function provisionEventBoundScriptV1_(child) {
   }
   writeMeta_(meta,{
     EVENT_SCRIPT_ID:scriptId,
-    EVENT_SCRIPT_VERSION:'1',
+    EVENT_SCRIPT_VERSION:'2',
     EVENT_SCRIPT_UPDATED:Utilities.formatDate(new Date(),APP.TZ,'dd/MM/yyyy HH:mm')
   });
   return {scriptId:scriptId,spreadsheetId:child.getId()};
