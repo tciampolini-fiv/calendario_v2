@@ -1,3 +1,5 @@
+const EVENT_SHEET_TEMPLATE_ID_V3 = '1obNkubjpGhC7o8AX5Tc986UBGdyJs26b476b-GZN3Sc';
+
 function prepareEventSheetForSelectedEventV2() {
   const event = selectedEvent_();
   const eventId = ensureEventId_(event);
@@ -115,10 +117,12 @@ function getOrCreateEventSheetV3_(eventId,event,folderId) {
   let child = findEventSheet_(eventId,event,folderId);
   let created = false;
   if (!child) {
-    child = SpreadsheetApp.create(buildEventSheetName_(event));
+    const folder = DriveApp.getFolderById(folderId);
+    const templateFile = DriveApp.getFileById(EVENT_SHEET_TEMPLATE_ID_V3);
+    const copy = templateFile.makeCopy(buildEventSheetName_(event), folder);
+    child = SpreadsheetApp.openById(copy.getId());
     child.setSpreadsheetLocale('it_IT');
     child.setSpreadsheetTimeZone(APP.TZ);
-    DriveApp.getFileById(child.getId()).moveTo(DriveApp.getFolderById(folderId));
     created = true;
   }
   ensureEventSheetBaseV3_(child,eventId,folderId,event);
