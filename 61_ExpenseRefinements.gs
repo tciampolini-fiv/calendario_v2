@@ -25,42 +25,63 @@ function prepareEventSheetForSelectedEventV2() {
   return {created:result.created,id:child.getId(),url:child.getUrl()};
 }
 
+function getLinkedEventSheetForSaveV2_(event) {
+  if (!event || !event._row) throw new Error('Seleziona una riga evento valida nel Calendario.');
+  const cal = sh_(APP.SHEETS.CALENDAR);
+  const map = headerMap_(cal);
+  const col = map[APP.CALENDAR_HEADERS.EVENT_SHEET];
+  if (!col) throw new Error('Colonna SCHEDA EVENTO non trovata nel Calendario.');
+
+  const cell = cal.getRange(event._row,col);
+  const rich = cell.getRichTextValue();
+  const url = (rich && rich.getLinkUrl()) || cell.getDisplayValue();
+  const id = extractDriveId_(url);
+  if (!id) {
+    throw new Error('Questa riga non ha una Scheda evento collegata. Usa prima “Crea / aggiorna scheda ← Calendario”.');
+  }
+  try {
+    return SpreadsheetApp.openById(id);
+  } catch (e) {
+    throw new Error('Non riesco ad aprire la Scheda evento collegata. Verifica il link nella colonna SCHEDA EVENTO.');
+  }
+}
+
 function syncSelectedEventSheetToCalendarV2() {
+  const ui = SpreadsheetApp.getUi();
   const event = selectedEvent_();
   const eventId = ensureEventId_(event);
-  const folder = createWorkFolderForEvent_(eventId, event, event._row);
-  const result = getOrCreateEventSheetV3_(eventId, event, folder.folderId);
-  const child = result.spreadsheet;
+
+  // SALVA e un flusso esclusivamente Scheda evento -> backend -> Calendario.
+  // Non crea una scheda, non migra e non ricarica i dati dal Calendario prima di leggerli.
+  const child = getLinkedEventSheetForSaveV2_(event);
   validateEventSheetIdentity_(child,eventId);
 
-  migrateLegacyEventSheetToV3_(eventId,event,child,folder.folderId);
+  ensureChecklistBackendHeadersV3_();
+  ensureParticipantsBackendHeadersV2_();
 
-  // Prima i partecipanti: i rimborsi del foglio Partecipanti diventano poi righe Spese.
+  // Prima i partecipanti: gli eventuali rimborsi passati alimentano poi le Spese.
   const participantCount = syncParticipantsV3ToBackend_(eventId,event,child);
   const taskCount = syncTasksV4ToBackend_(eventId,event,child);
   const expenseCount = syncExpensesV4ToBackend_(eventId,event,child);
-  const counts = {
-    tasks: taskCount,
-    participants: participantCount,
-    expenses: expenseCount
-  };
 
-  seedPresenceCheckTaskV3_(eventId,event,child);
-  ensureTaskNumbersAndDefaultDependenciesV3_(eventId,event);
-  refreshTasksV4FromBackend_(eventId,event,child);
-  refreshParticipantsV3FromBackend_(eventId,event,child);
-  refreshExpensesV4FromBackend_(eventId,event,child,folder.folderId);
-  ensureEventSheetEditTriggerV5_(child);
-  hideEventSheetTechnicalColumnsV3_(child);
-
-  setEventSheetLink_(event._row, child.getUrl());
-  writeEventMetaV5_(child,eventId,event,folder.folderId);
+  // Le colonne di riepilogo del Calendario sono formule che leggono _CHECKLIST e _SPESE.
+  // Basta quindi aggiornare correttamente i backend e forzare il ricalcolo.
   SpreadsheetApp.flush();
 
-  SpreadsheetApp.getUi().alert(
+  const counts = {
+    tasks:taskCount,
+    participants:participantCount,
+    expenses:expenseCount
+  };
+
+  ui.alert(
     'Calendario aggiornato',
-    'Attività: ' + counts.tasks + '\nSpese: ' + counts.expenses + '\nPartecipanti: ' + counts.participants,
-    SpreadsheetApp.getUi().ButtonSet.OK
+    'I dati presenti nella Scheda evento sono stati salvati nel Calendario.\n\n' +
+    'Attività: ' + counts.tasks + '\n' +
+    'Spese: ' + counts.expenses + '\n' +
+    'Partecipanti: ' + counts.participants + '\n\n' +
+    'La Scheda evento non è stata ricaricata dal Calendario.',
+    ui.ButtonSet.OK
   );
   return counts;
 }
