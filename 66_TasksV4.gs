@@ -6,24 +6,32 @@ const TASKS_V4 = Object.freeze({
   STATUS: Object.freeze(['DA FARE','IN ATTESA','FATTO'])
 });
 
-function getNativeTaskTableV4_(child, sheet) {
+function getNativeTaskTableStateV4_(child, sheet) {
   try {
     const ss = Sheets.Spreadsheets.get(child.getId(), {
-      fields: 'sheets(properties(sheetId,title),tables(tableId,name,range))'
+      fields: 'sheets(properties(sheetId,title),tables(tableId,name,range,columnProperties))'
     });
     const sheetInfo = (ss.sheets || []).find(s =>
       s.properties && Number(s.properties.sheetId) === Number(sheet.getSheetId())
     );
     const tables = sheetInfo && sheetInfo.tables ? sheetInfo.tables : [];
-    return tables.find(t => String(t.name || '') === TASKS_V4.TABLE_NAME) || tables[0] || null;
+    const table = tables.find(t => String(t.name || '') === TASKS_V4.TABLE_NAME) || tables[0] || null;
+    return {ok:true, table:table};
   } catch (e) {
     console.log('Lettura tabella nativa Attivita non riuscita: ' + e.message);
-    return null;
+    return {ok:false, table:null};
   }
 }
 
+function getNativeTaskTableV4_(child, sheet) {
+  return getNativeTaskTableStateV4_(child, sheet).table;
+}
+
 function hasNativeTaskTableV4_(sheet) {
-  return !!getNativeTaskTableV4_(sheet.getParent(), sheet);
+  const state = getNativeTaskTableStateV4_(sheet.getParent(), sheet);
+  // Se non riusciamo a verificare, ci comportiamo in modo conservativo:
+  // evitiamo modifiche Range che potrebbero essere vietate su colonne tipizzate.
+  return !state.ok || !!state.table;
 }
 
 function ensureTaskV4Structure_(child) {
@@ -33,7 +41,8 @@ function ensureTaskV4Structure_(child) {
     sheet.insertRowsAfter(sheet.getMaxRows(), TASKS_V4.ENTRY_END_ROW - sheet.getMaxRows());
   }
 
-  const nativeTable = getNativeTaskTableV4_(child, sheet);
+  const state = getNativeTaskTableStateV4_(child, sheet);
+  const nativeTable = state.table;
 
   sheet.setFrozenRows(1);
   sheet.showColumns(1, TASKS_V4.VISIBLE_COLS);
@@ -42,11 +51,9 @@ function ensureTaskV4Structure_(child) {
   }
   [320,330,55,95,115,105].forEach((w,i) => sheet.setColumnWidth(i + 1, w));
 
-  // A native Sheets table owns column typing/validation/number formats.
-  // Reapplying Range formatting or data validation to typed columns throws:
-  // "This operation is not allowed on cells in typed columns".
-  // Therefore cell-level setup is done only before the table exists.
-  if (!nativeTable) {
+  // Le operazioni cella-per-cella vengono eseguite solo prima della creazione
+  // della tabella nativa. Dopo, tipo e dropdown sono gestiti dalla tabella stessa.
+  if (state.ok && !nativeTable) {
     sheet.getRange(1,1,1,TASKS_V4.VISIBLE_COLS).setValues([TASKS_V4.HEADERS]);
     sheet.getRange(1,1,1,TASKS_V4.VISIBLE_COLS)
       .setFontWeight('bold')
@@ -56,38 +63,122 @@ function ensureTaskV4Structure_(child) {
 
     sheet.getRange('A1').setNote('Scegli una task frequente dal menu oppure scrivila/modificala liberamente.');
     sheet.getRange('C1').setNote('Numero stabile della task. Una nuova task riceve sempre il numero massimo esistente + 1, anche se la inserisci in mezzo alle altre.');
-    sheet.getRange('D1').setNote('Indica il numero della task da cui dipende. Il menu legge direttamente i numeri presenti nella colonna N.');
+    sheet.getRange('D1').setNote('Indica il numero della task da cui dipende. Il menu propone i numeri presenti nella colonna N.');
     sheet.getRange('E1').setNote('Le task dipendenti restano IN ATTESA finche la task precedente non e FATTO, poi passano a DA FARE. Puoi segnare FATTO manualmente.');
     sheet.getRange('F1').setNote('Per Check conferma presenze inserisci qui la data limite indicata nella convocazione.');
 
-    applyTaskV4Validations_(sheet, true);
     applyTaskV4ConditionalFormatting_(sheet);
   }
   return sheet;
 }
 
-function applyTaskV4Validations_(sheet, tableAlreadyCheckedAbsent) {
-  if (!tableAlreadyCheckedAbsent && hasNativeTaskTableV4_(sheet)) return false;
+function uniqueTaskChoicesV4_(values) {
+  const seen = new Set();
+  const out = [];
+  values.forEach(value => {
+    const text = String(value === null || value === undefined ? '' : value).trim();
+    if (!text) return;
+    const key = normalize_(text);
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push(text);
+  });
+  return out;
+}
 
-  const activityChoices = getTaskPresetChoicesV3_();
-  sheet.getRange('A2:A' + TASKS_V4.ENTRY_END_ROW).setDataValidation(
-    SpreadsheetApp.newDataValidation()
-      .requireValueInList(activityChoices,true)
-      .setAllowInvalid(true)
-      .build()
+function taskDropdownRuleV4_(values) {
+  const choices = uniqueTaskChoicesV4_(values);
+  if (!choices.length) return null;
+  return {
+    condition: {
+      type: 'ONE_OF_LIST',
+      values: choices.map(value => ({userEnteredValue:String(value)}))
+    }
+  };
+}
+
+function taskTableColumnPropertiesV4_(sheet) {
+  const existingDescriptions = sheet.getRange(2,1,TASKS_V4.ENTRY_END_ROW-1,1)
+    .getDisplayValues().flat();
+  const activityChoices = uniqueTaskChoicesV4_(
+    getTaskPresetChoicesV3_().concat(existingDescriptions)
   );
-  sheet.getRange('D2:D' + TASKS_V4.ENTRY_END_ROW).setDataValidation(
-    SpreadsheetApp.newDataValidation()
-      .requireValueInRange(sheet.getRange('C2:C' + TASKS_V4.ENTRY_END_ROW),true)
-      .setAllowInvalid(true)
-      .build()
+
+  const dependencyChoices = uniqueTaskChoicesV4_(
+    sheet.getRange(2,3,TASKS_V4.ENTRY_END_ROW-1,1)
+      .getValues().flat()
+      .map(value => {
+        const n = Number(value || 0);
+        return n > 0 ? String(n) : '';
+      })
   );
-  sheet.getRange('E2:E' + TASKS_V4.ENTRY_END_ROW).setDataValidation(
-    SpreadsheetApp.newDataValidation()
-      .requireValueInList(TASKS_V4.STATUS,true)
-      .setAllowInvalid(true)
-      .build()
-  );
+
+  const activityRule = taskDropdownRuleV4_(activityChoices);
+  const statusRule = taskDropdownRuleV4_(TASKS_V4.STATUS);
+  const dependencyRule = taskDropdownRuleV4_(dependencyChoices);
+
+  return [
+    {
+      columnIndex:0,
+      columnName:TASKS_V4.HEADERS[0],
+      columnType:'DROPDOWN',
+      dataValidationRule:activityRule
+    },
+    {
+      columnIndex:1,
+      columnName:TASKS_V4.HEADERS[1],
+      columnType:'TEXT'
+    },
+    {
+      columnIndex:2,
+      columnName:TASKS_V4.HEADERS[2],
+      columnType:'DOUBLE'
+    },
+    dependencyRule ? {
+      columnIndex:3,
+      columnName:TASKS_V4.HEADERS[3],
+      columnType:'DROPDOWN',
+      dataValidationRule:dependencyRule
+    } : {
+      columnIndex:3,
+      columnName:TASKS_V4.HEADERS[3],
+      columnType:'DOUBLE'
+    },
+    {
+      columnIndex:4,
+      columnName:TASKS_V4.HEADERS[4],
+      columnType:'DROPDOWN',
+      dataValidationRule:statusRule
+    },
+    {
+      columnIndex:5,
+      columnName:TASKS_V4.HEADERS[5],
+      columnType:'DATE'
+    }
+  ];
+}
+
+function clearLegacyTaskValidationsOutsideTableV4_(sheet, table) {
+  // Le vecchie versioni applicavano convalide Range fino alla riga 500.
+  // Prima di ampliare una tabella esistente rimuoviamo solo quelle che sono
+  // ancora FUORI dalla tabella, evitando qualsiasi operazione su celle tipizzate.
+  const currentEndRow = table && table.range && table.range.endRowIndex
+    ? Number(table.range.endRowIndex)
+    : 1;
+  const firstOutsideRow = Math.max(2, currentEndRow + 1);
+  if (firstOutsideRow > TASKS_V4.ENTRY_END_ROW) return;
+  sheet.getRange(
+    firstOutsideRow,
+    1,
+    TASKS_V4.ENTRY_END_ROW - firstOutsideRow + 1,
+    TASKS_V4.VISIBLE_COLS
+  ).clearDataValidations();
+}
+
+function applyTaskV4Validations_(sheet) {
+  // Compatibilita con chiamate legacy: i dropdown delle Attivita sono ora
+  // proprieta delle colonne della tabella nativa, non convalide Range.
+  if (hasNativeTaskTableV4_(sheet)) return false;
   return true;
 }
 
@@ -168,8 +259,7 @@ function refreshTasksV4FromBackend_(eventId, event, child) {
     sheet.getRange(row,5).setFormula(taskLiveStatusFormulaV4_(row,isPresenceCheck));
   });
 
-  applyTaskV4Validations_(sheet);
-  ensureNativeTaskTableV4_(child, sheet, Math.max(out.length + 1, 2));
+  ensureNativeTaskTableV4_(child, sheet);
   ensureTaskEditTriggerV4_(child);
   return out.length;
 }
@@ -242,7 +332,7 @@ function syncTasksV4ToBackend_(eventId, event, child) {
     const hasStatusFormula = !!String((x.formulas && x.formulas[4]) || '').trim();
     let autoBlock = '';
     if (status !== 'FATTO' && depNo && hasStatusFormula) {
-      const parent = draft.find(y => y.no === depNo);
+      const parent = draft.find(y => y.no===depNo);
       const parentDone = parent && normalize_(parent.values[4]) === 'FATTO';
       if (!parentDone) autoBlock = 'DIPENDENZA';
       else if (normalize_(autoKey) === 'CHECK_CONFERME' && (!(due instanceof Date) || due > now)) autoBlock = 'DATA';
@@ -269,37 +359,58 @@ function syncTasksV4ToBackend_(eventId, event, child) {
   });
 
   replaceCentralRowsForEvent_(backendSheet,eventId,2,rows,16);
-  ensureNativeTaskTableV4_(child, sheet, Math.max(rows.length + 1, 2));
+  ensureNativeTaskTableV4_(child, sheet);
   return rows.length;
 }
 
-function ensureNativeTaskTableV4_(child, sheet, endRow) {
-  endRow = Math.max(2, Math.min(Number(endRow||2), TASKS_V4.ENTRY_END_ROW));
+function ensureNativeTaskTableV4_(child, sheet) {
   try {
     const filter = sheet.getFilter();
     if (filter) filter.remove();
   } catch (e) {}
 
+  const state = getNativeTaskTableStateV4_(child, sheet);
+  if (!state.ok) {
+    console.log('Tabella nativa Attivita non aggiornata: stato non verificabile.');
+    return false;
+  }
+
   try {
-    const table = getNativeTaskTableV4_(child, sheet);
+    clearLegacyTaskValidationsOutsideTableV4_(sheet, state.table);
+
     const range = {
       sheetId: sheet.getSheetId(),
       startRowIndex: 0,
-      endRowIndex: endRow,
+      endRowIndex: TASKS_V4.ENTRY_END_ROW,
       startColumnIndex: 0,
       endColumnIndex: TASKS_V4.VISIBLE_COLS
     };
-    if (table) {
+    const columnProperties = taskTableColumnPropertiesV4_(sheet);
+
+    if (state.table) {
       Sheets.Spreadsheets.batchUpdate({requests:[{
-        updateTable:{table:{tableId:table.tableId,range:range},fields:'range'}
+        updateTable:{
+          table:{
+            tableId:state.table.tableId,
+            range:range,
+            columnProperties:columnProperties
+          },
+          fields:'range,columnProperties'
+        }
       }]}, child.getId());
     } else {
       Sheets.Spreadsheets.batchUpdate({requests:[{
-        addTable:{table:{name:TASKS_V4.TABLE_NAME,range:range}}
+        addTable:{table:{
+          name:TASKS_V4.TABLE_NAME,
+          range:range,
+          columnProperties:columnProperties
+        }}
       }]}, child.getId());
     }
+    return true;
   } catch (e) {
     console.log('Tabella nativa Attivita non creata/aggiornata: ' + e.message);
+    return false;
   }
 }
 
@@ -322,7 +433,6 @@ function handleEventTaskEditV4(e) {
   const lastCol = firstCol + e.range.getNumColumns() - 1;
   if (firstCol > TASKS_V4.VISIBLE_COLS) return;
 
-  applyTaskV4ValidationToRow_(sheet,row);
   const description = String(sheet.getRange(row,1).getDisplayValue()||'').trim();
   if (!description) return;
 
@@ -336,9 +446,11 @@ function handleEventTaskEditV4(e) {
       .filter(v => v>0);
     no = nums.length ? Math.max.apply(null,nums) + 1 : 1;
     noCell.setValue(no);
+    // Aggiorna subito il dropdown DIPENDE DA con il nuovo numero.
+    ensureNativeTaskTableV4_(sheet.getParent(), sheet);
   }
 
-  // If the user edits STATO directly, keep the manual choice.
+  // Se l utente modifica direttamente STATO, la sua scelta resta manuale.
   if (firstCol <= 5 && lastCol >= 5) return;
 
   const depNo = Number(sheet.getRange(row,4).getValue()||0);
@@ -352,19 +464,7 @@ function handleEventTaskEditV4(e) {
 }
 
 function applyTaskV4ValidationToRow_(sheet,row) {
-  // A native table already owns validation/type rules for its rows.
-  if (hasNativeTaskTableV4_(sheet)) return false;
-
-  const activityChoices = getTaskPresetChoicesV3_();
-  sheet.getRange(row,1).setDataValidation(
-    SpreadsheetApp.newDataValidation().requireValueInList(activityChoices,true).setAllowInvalid(true).build()
-  );
-  sheet.getRange(row,4).setDataValidation(
-    SpreadsheetApp.newDataValidation().requireValueInRange(sheet.getRange('C2:C' + TASKS_V4.ENTRY_END_ROW),true).setAllowInvalid(true).build()
-  );
-  sheet.getRange(row,5).setDataValidation(
-    SpreadsheetApp.newDataValidation().requireValueInList(TASKS_V4.STATUS,true).setAllowInvalid(true).build()
-  );
-  sheet.getRange(row,1,1,TASKS_V4.VISIBLE_COLS).setVerticalAlignment('top').setWrap(true);
-  return true;
+  // Compatibilita legacy: nelle tabelle native la validazione e definita
+  // a livello di colonna e non va piu applicata alla singola cella.
+  return false;
 }
