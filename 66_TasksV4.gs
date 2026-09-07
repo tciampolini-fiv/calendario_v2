@@ -6,6 +6,26 @@ const TASKS_V4 = Object.freeze({
   STATUS: Object.freeze(['DA FARE','IN ATTESA','FATTO'])
 });
 
+function getNativeTaskTableV4_(child, sheet) {
+  try {
+    const ss = Sheets.Spreadsheets.get(child.getId(), {
+      fields: 'sheets(properties(sheetId,title),tables(tableId,name,range))'
+    });
+    const sheetInfo = (ss.sheets || []).find(s =>
+      s.properties && Number(s.properties.sheetId) === Number(sheet.getSheetId())
+    );
+    const tables = sheetInfo && sheetInfo.tables ? sheetInfo.tables : [];
+    return tables.find(t => String(t.name || '') === TASKS_V4.TABLE_NAME) || tables[0] || null;
+  } catch (e) {
+    console.log('Lettura tabella nativa Attivita non riuscita: ' + e.message);
+    return null;
+  }
+}
+
+function hasNativeTaskTableV4_(sheet) {
+  return !!getNativeTaskTableV4_(sheet.getParent(), sheet);
+}
+
 function ensureTaskV4Structure_(child) {
   let sheet = child.getSheetByName(EVENT_SHEET.SHEETS.TASKS);
   if (!sheet) sheet = child.insertSheet(EVENT_SHEET.SHEETS.TASKS, 0);
@@ -13,36 +33,42 @@ function ensureTaskV4Structure_(child) {
     sheet.insertRowsAfter(sheet.getMaxRows(), TASKS_V4.ENTRY_END_ROW - sheet.getMaxRows());
   }
 
-  sheet.getRange(1,1,1,TASKS_V4.VISIBLE_COLS).setValues([TASKS_V4.HEADERS]);
+  const nativeTable = getNativeTaskTableV4_(child, sheet);
+
   sheet.setFrozenRows(1);
-  sheet.showColumns(1,TASKS_V4.VISIBLE_COLS);
+  sheet.showColumns(1, TASKS_V4.VISIBLE_COLS);
   if (sheet.getMaxColumns() > TASKS_V4.VISIBLE_COLS) {
     sheet.hideColumns(TASKS_V4.VISIBLE_COLS + 1, sheet.getMaxColumns() - TASKS_V4.VISIBLE_COLS);
   }
+  [320,330,55,95,115,105].forEach((w,i) => sheet.setColumnWidth(i + 1, w));
 
-  sheet.getRange(1,1,1,TASKS_V4.VISIBLE_COLS)
-    .setFontWeight('bold')
-    .setVerticalAlignment('middle')
-    .setWrap(true);
-  [320,330,55,95,115,105].forEach((w,i)=>sheet.setColumnWidth(i+1,w));
-  sheet.getRange('A2:F' + TASKS_V4.ENTRY_END_ROW).setVerticalAlignment('top').setWrap(true);
+  // A native Sheets table owns column typing/validation/number formats.
+  // Reapplying Range formatting or data validation to typed columns throws:
+  // "This operation is not allowed on cells in typed columns".
+  // Therefore cell-level setup is done only before the table exists.
+  if (!nativeTable) {
+    sheet.getRange(1,1,1,TASKS_V4.VISIBLE_COLS).setValues([TASKS_V4.HEADERS]);
+    sheet.getRange(1,1,1,TASKS_V4.VISIBLE_COLS)
+      .setFontWeight('bold')
+      .setVerticalAlignment('middle')
+      .setWrap(true);
+    sheet.getRange('A2:F' + TASKS_V4.ENTRY_END_ROW).setVerticalAlignment('top').setWrap(true);
 
-  // IMPORTANTE: non impostare setNumberFormat sulle colonne di Attività.
-  // Se il foglio è una tabella nativa, Google Sheets può tipizzare le colonne
-  // e rifiuta qualsiasi modifica manuale del formato numerico.
+    sheet.getRange('A1').setNote('Scegli una task frequente dal menu oppure scrivila/modificala liberamente.');
+    sheet.getRange('C1').setNote('Numero stabile della task. Una nuova task riceve sempre il numero massimo esistente + 1, anche se la inserisci in mezzo alle altre.');
+    sheet.getRange('D1').setNote('Indica il numero della task da cui dipende. Il menu legge direttamente i numeri presenti nella colonna N.');
+    sheet.getRange('E1').setNote('Le task dipendenti restano IN ATTESA finche la task precedente non e FATTO, poi passano a DA FARE. Puoi segnare FATTO manualmente.');
+    sheet.getRange('F1').setNote('Per Check conferma presenze inserisci qui la data limite indicata nella convocazione.');
 
-  sheet.getRange('A1').setNote('Scegli una task frequente dal menu oppure scrivila/modificala liberamente.');
-  sheet.getRange('C1').setNote('Numero stabile della task. Una nuova task riceve sempre il numero massimo esistente + 1, anche se la inserisci in mezzo alle altre.');
-  sheet.getRange('D1').setNote('Indica il numero della task da cui dipende. Il menu legge direttamente i numeri presenti nella colonna N.');
-  sheet.getRange('E1').setNote('Le task dipendenti restano IN ATTESA finché la task precedente non è FATTO, poi passano a DA FARE. Puoi segnare FATTO manualmente.');
-  sheet.getRange('F1').setNote('Per Check conferma presenze inserisci qui la data limite indicata nella convocazione.');
-
-  applyTaskV4Validations_(sheet);
-  applyTaskV4ConditionalFormatting_(sheet);
+    applyTaskV4Validations_(sheet, true);
+    applyTaskV4ConditionalFormatting_(sheet);
+  }
   return sheet;
 }
 
-function applyTaskV4Validations_(sheet) {
+function applyTaskV4Validations_(sheet, tableAlreadyCheckedAbsent) {
+  if (!tableAlreadyCheckedAbsent && hasNativeTaskTableV4_(sheet)) return false;
+
   const activityChoices = getTaskPresetChoicesV3_();
   sheet.getRange('A2:A' + TASKS_V4.ENTRY_END_ROW).setDataValidation(
     SpreadsheetApp.newDataValidation()
@@ -62,6 +88,7 @@ function applyTaskV4Validations_(sheet) {
       .setAllowInvalid(true)
       .build()
   );
+  return true;
 }
 
 function applyTaskV4ConditionalFormatting_(sheet) {
@@ -109,16 +136,14 @@ function refreshTasksV4FromBackend_(eventId, event, child) {
   seedPresenceCheckTaskV3_(eventId,event,child);
   ensureTaskNumbersAndDefaultDependenciesV3_(eventId,event);
 
-  // Prima costruiamo completamente i dati dal backend. Solo dopo tocchiamo il foglio.
-  // In questo modo un eventuale errore di struttura non può lasciare Attività svuotato.
   const backendSheet = sh_(APP.SHEETS.CHECKLIST);
   const backend = backendSheet.getDataRange().getValues().slice(1)
-    .filter(r=>String(r[1])===String(eventId));
+    .filter(r => String(r[1]) === String(eventId));
   const byId = {};
-  backend.forEach(r=>{ if (r[0]) byId[String(r[0])] = r; });
-  backend.sort((a,b)=>Number(a[2]||999999)-Number(b[2]||999999) || Number(a[13]||999999)-Number(b[13]||999999));
+  backend.forEach(r => { if (r[0]) byId[String(r[0])] = r; });
+  backend.sort((a,b) => Number(a[2]||999999)-Number(b[2]||999999) || Number(a[13]||999999)-Number(b[13]||999999));
 
-  const out = backend.map(r=>{
+  const out = backend.map(r => {
     const dep = r[14] ? byId[String(r[14])] : null;
     return [
       r[3]||'',
@@ -134,7 +159,7 @@ function refreshTasksV4FromBackend_(eventId, event, child) {
   sheet.getRange(2,1,TASKS_V4.ENTRY_END_ROW-1,TASKS_V4.VISIBLE_COLS).clearContent();
   if (out.length) sheet.getRange(2,1,out.length,TASKS_V4.VISIBLE_COLS).setValues(out);
 
-  backend.forEach((r,index)=>{
+  backend.forEach((r,index) => {
     const row = index + 2;
     const depId = String(r[14]||'').trim();
     const status = normalize_(r[6]);
@@ -160,7 +185,7 @@ function syncTasksV4ToBackend_(eventId, event, child) {
   const oldRows = backendSheet.getDataRange().getValues();
   const oldByNo = {};
   let maxNo = 0;
-  for (let i=1;i<oldRows.length;i++) {
+  for (let i=1; i<oldRows.length; i++) {
     if (String(oldRows[i][1]) !== String(eventId)) continue;
     const n = Number(oldRows[i][13]||0);
     if (n > 0) oldByNo[n] = oldRows[i];
@@ -168,7 +193,7 @@ function syncTasksV4ToBackend_(eventId, event, child) {
   }
 
   const draft = [];
-  values.forEach((r,i)=>{
+  values.forEach((r,i) => {
     const description = String(r[0]||'').trim();
     if (!description) return;
     let no = Number(r[2]||0);
@@ -182,13 +207,13 @@ function syncTasksV4ToBackend_(eventId, event, child) {
   });
 
   const seen = new Set();
-  draft.forEach(x=>{
+  draft.forEach(x => {
     if (seen.has(x.no)) throw new Error('Numero task duplicato: ' + x.no + '.');
     seen.add(x.no);
   });
 
   const idByNo = {};
-  draft.forEach(x=>{
+  draft.forEach(x => {
     const old = oldByNo[x.no];
     x.old = old ? old.slice(0,16) : new Array(16).fill('');
     x.id = old && old[0] ? String(old[0]) : 'TASK-' + Utilities.getUuid();
@@ -197,11 +222,11 @@ function syncTasksV4ToBackend_(eventId, event, child) {
 
   const now = new Date();
   const rows = [];
-  draft.forEach((x,index)=>{
+  draft.forEach((x,index) => {
     const r = x.values;
     const depNo = Number(r[3]||0);
     if (depNo && !idByNo[depNo]) throw new Error('La task n. ' + x.no + ' dipende dalla task n. ' + depNo + ', che non esiste.');
-    if (depNo === x.no) throw new Error('La task n. ' + x.no + ' non può dipendere da se stessa.');
+    if (depNo === x.no) throw new Error('La task n. ' + x.no + ' non puo dipendere da se stessa.');
 
     const old = x.old;
     const depId = depNo ? idByNo[depNo] : '';
@@ -217,7 +242,7 @@ function syncTasksV4ToBackend_(eventId, event, child) {
     const hasStatusFormula = !!String((x.formulas && x.formulas[4]) || '').trim();
     let autoBlock = '';
     if (status !== 'FATTO' && depNo && hasStatusFormula) {
-      const parent = draft.find(y=>y.no===depNo);
+      const parent = draft.find(y => y.no === depNo);
       const parentDone = parent && normalize_(parent.values[4]) === 'FATTO';
       if (!parentDone) autoBlock = 'DIPENDENZA';
       else if (normalize_(autoKey) === 'CHECK_CONFERME' && (!(due instanceof Date) || due > now)) autoBlock = 'DATA';
@@ -256,12 +281,7 @@ function ensureNativeTaskTableV4_(child, sheet, endRow) {
   } catch (e) {}
 
   try {
-    const ss = Sheets.Spreadsheets.get(child.getId(), {
-      fields: 'sheets(properties(sheetId,title),tables(tableId,name,range))'
-    });
-    const sheetInfo = (ss.sheets || []).find(s=>s.properties && Number(s.properties.sheetId)===Number(sheet.getSheetId()));
-    const tables = sheetInfo && sheetInfo.tables ? sheetInfo.tables : [];
-    const table = tables.find(t=>String(t.name||'')===TASKS_V4.TABLE_NAME) || tables[0];
+    const table = getNativeTaskTableV4_(child, sheet);
     const range = {
       sheetId: sheet.getSheetId(),
       startRowIndex: 0,
@@ -279,13 +299,13 @@ function ensureNativeTaskTableV4_(child, sheet, endRow) {
       }]}, child.getId());
     }
   } catch (e) {
-    console.log('Tabella nativa Attività non creata/aggiornata: ' + e.message);
+    console.log('Tabella nativa Attivita non creata/aggiornata: ' + e.message);
   }
 }
 
 function ensureTaskEditTriggerV4_(child) {
   const sourceId = child.getId();
-  const exists = ScriptApp.getProjectTriggers().some(t=>{
+  const exists = ScriptApp.getProjectTriggers().some(t => {
     if (t.getHandlerFunction() !== 'handleEventTaskEditV4') return false;
     try { return t.getTriggerSourceId() === sourceId; } catch (e) { return false; }
   });
@@ -312,13 +332,13 @@ function handleEventTaskEditV4(e) {
     const last = Math.max(sheet.getLastRow(),2);
     const nums = sheet.getRange(2,3,last-1,1).getValues()
       .flat()
-      .map(v=>Number(v||0))
-      .filter(v=>v>0);
+      .map(v => Number(v||0))
+      .filter(v => v>0);
     no = nums.length ? Math.max.apply(null,nums) + 1 : 1;
     noCell.setValue(no);
   }
 
-  // Se l utente modifica direttamente STATO, la sua scelta resta manuale.
+  // If the user edits STATO directly, keep the manual choice.
   if (firstCol <= 5 && lastCol >= 5) return;
 
   const depNo = Number(sheet.getRange(row,4).getValue()||0);
@@ -332,6 +352,9 @@ function handleEventTaskEditV4(e) {
 }
 
 function applyTaskV4ValidationToRow_(sheet,row) {
+  // A native table already owns validation/type rules for its rows.
+  if (hasNativeTaskTableV4_(sheet)) return false;
+
   const activityChoices = getTaskPresetChoicesV3_();
   sheet.getRange(row,1).setDataValidation(
     SpreadsheetApp.newDataValidation().requireValueInList(activityChoices,true).setAllowInvalid(true).build()
@@ -343,4 +366,5 @@ function applyTaskV4ValidationToRow_(sheet,row) {
     SpreadsheetApp.newDataValidation().requireValueInList(TASKS_V4.STATUS,true).setAllowInvalid(true).build()
   );
   sheet.getRange(row,1,1,TASKS_V4.VISIBLE_COLS).setVerticalAlignment('top').setWrap(true);
+  return true;
 }
