@@ -26,9 +26,10 @@ function ensureTaskV4Structure_(child) {
     .setWrap(true);
   [320,330,55,95,115,105].forEach((w,i)=>sheet.setColumnWidth(i+1,w));
   sheet.getRange('A2:F' + TASKS_V4.ENTRY_END_ROW).setVerticalAlignment('top').setWrap(true);
-  sheet.getRange('C2:D' + TASKS_V4.ENTRY_END_ROW).setNumberFormat('0');
-  sheet.getRange('E2:E' + TASKS_V4.ENTRY_END_ROW).setNumberFormat('@');
-  sheet.getRange('F2:F' + TASKS_V4.ENTRY_END_ROW).setNumberFormat('dd/MM/yyyy');
+
+  // IMPORTANTE: non impostare setNumberFormat sulle colonne di Attività.
+  // Se il foglio è una tabella nativa, Google Sheets può tipizzare le colonne
+  // e rifiuta qualsiasi modifica manuale del formato numerico.
 
   sheet.getRange('A1').setNote('Scegli una task frequente dal menu oppure scrivila/modificala liberamente.');
   sheet.getRange('C1').setNote('Numero stabile della task. Una nuova task riceve sempre il numero massimo esistente + 1, anche se la inserisci in mezzo alle altre.');
@@ -108,15 +109,14 @@ function refreshTasksV4FromBackend_(eventId, event, child) {
   seedPresenceCheckTaskV3_(eventId,event,child);
   ensureTaskNumbersAndDefaultDependenciesV3_(eventId,event);
 
+  // Prima costruiamo completamente i dati dal backend. Solo dopo tocchiamo il foglio.
+  // In questo modo un eventuale errore di struttura non può lasciare Attività svuotato.
   const backendSheet = sh_(APP.SHEETS.CHECKLIST);
   const backend = backendSheet.getDataRange().getValues().slice(1)
     .filter(r=>String(r[1])===String(eventId));
   const byId = {};
   backend.forEach(r=>{ if (r[0]) byId[String(r[0])] = r; });
   backend.sort((a,b)=>Number(a[2]||999999)-Number(b[2]||999999) || Number(a[13]||999999)-Number(b[13]||999999));
-
-  const sheet = ensureTaskV4Structure_(child);
-  sheet.getRange(2,1,TASKS_V4.ENTRY_END_ROW-1,TASKS_V4.VISIBLE_COLS).clearContent();
 
   const out = backend.map(r=>{
     const dep = r[14] ? byId[String(r[14])] : null;
@@ -129,6 +129,9 @@ function refreshTasksV4FromBackend_(eventId, event, child) {
       r[5]||''
     ];
   });
+
+  const sheet = ensureTaskV4Structure_(child);
+  sheet.getRange(2,1,TASKS_V4.ENTRY_END_ROW-1,TASKS_V4.VISIBLE_COLS).clearContent();
   if (out.length) sheet.getRange(2,1,out.length,TASKS_V4.VISIBLE_COLS).setValues(out);
 
   backend.forEach((r,index)=>{
@@ -312,7 +315,7 @@ function handleEventTaskEditV4(e) {
       .map(v=>Number(v||0))
       .filter(v=>v>0);
     no = nums.length ? Math.max.apply(null,nums) + 1 : 1;
-    noCell.setValue(no).setNumberFormat('0');
+    noCell.setValue(no);
   }
 
   // Se l utente modifica direttamente STATO, la sua scelta resta manuale.
@@ -336,9 +339,8 @@ function applyTaskV4ValidationToRow_(sheet,row) {
   sheet.getRange(row,4).setDataValidation(
     SpreadsheetApp.newDataValidation().requireValueInRange(sheet.getRange('C2:C' + TASKS_V4.ENTRY_END_ROW),true).setAllowInvalid(true).build()
   );
-  sheet.getRange(row,5).setNumberFormat('@').setDataValidation(
+  sheet.getRange(row,5).setDataValidation(
     SpreadsheetApp.newDataValidation().requireValueInList(TASKS_V4.STATUS,true).setAllowInvalid(true).build()
   );
-  sheet.getRange(row,6).setNumberFormat('dd/MM/yyyy');
   sheet.getRange(row,1,1,TASKS_V4.VISIBLE_COLS).setVerticalAlignment('top').setWrap(true);
 }
