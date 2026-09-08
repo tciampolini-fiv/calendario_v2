@@ -16,6 +16,11 @@ const EVENT_APP = Object.freeze({
 function onEdit(e) {
   if (!e || !e.range) return;
   const sheet = e.range.getSheet();
+
+  if (sheet.getName() === EVENT_APP.SHEETS.TASKS) {
+    eventHandleTaskDescriptionEdit_(e);
+  }
+
   if (sheet.getName() === EVENT_APP.SHEETS.EXPENSES) {
     if (e.range.getA1Notation() === 'J7' && e.value === 'TRUE') {
       try { eventImportExpense(); }
@@ -34,6 +39,43 @@ function onEdit(e) {
     const row = e.range.getRow();
     const col = e.range.getColumn();
     if (row >= 3 && row <= 42 && col >= 6 && col <= 8) eventRefreshExpenseDashboard();
+  }
+}
+
+function eventHandleTaskDescriptionEdit_(e) {
+  const range = e.range;
+  const sheet = range.getSheet();
+  const firstRow = Math.max(2, range.getRow());
+  const lastRow = Math.min(500, range.getLastRow());
+  const firstCol = range.getColumn();
+  const lastCol = range.getLastColumn();
+
+  // La logica scatta solo se la modifica interessa DESCRIZIONE TASK (colonna A).
+  if (lastRow < firstRow || firstCol > 1 || lastCol < 1) return;
+
+  const taskCount = lastRow - firstRow + 1;
+  const descriptions = sheet.getRange(firstRow,1,taskCount,1).getDisplayValues();
+  const numbers = sheet.getRange(firstRow,3,taskCount,1).getValues();
+  const states = sheet.getRange(firstRow,5,taskCount,1).getDisplayValues();
+
+  // Trova il numero più alto già utilizzato da tutte le altre task.
+  const allNumbers = sheet.getRange(2,3,499,1).getValues();
+  let nextNumber = allNumbers.reduce((max,row)=>{
+    const n = Number(row[0]);
+    return Number.isFinite(n) && n > max ? n : max;
+  },0) + 1;
+
+  for (let i=0;i<taskCount;i++) {
+    const description = String(descriptions[i][0]||'').trim();
+    if (!description) continue;
+
+    const row = firstRow + i;
+    if (!numbers[i][0]) {
+      sheet.getRange(row,3).setValue(nextNumber++);
+    }
+    if (!String(states[i][0]||'').trim()) {
+      sheet.getRange(row,5).setValue('DA FARE');
+    }
   }
 }
 
