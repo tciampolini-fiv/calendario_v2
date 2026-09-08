@@ -13,15 +13,6 @@ const EVENT_APP = Object.freeze({
   ]
 });
 
-function onOpen() {
-  SpreadsheetApp.getUi().createMenu('Scheda evento')
-    .addItem('➕ Importa nuova spesa','eventImportExpense')
-    .addItem('🔄 Aggiorna cruscotto spese','eventRefreshExpenseDashboard')
-    .addSeparator()
-    .addItem('📄 Genera documenti','eventGenerateDocuments')
-    .addToUi();
-}
-
 function onEdit(e) {
   if (!e || !e.range) return;
   const sheet = e.range.getSheet();
