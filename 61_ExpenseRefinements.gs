@@ -10,20 +10,18 @@ function prepareEventSheetForSelectedEventV2() {
   ensureChecklistBackendHeadersV3_();
   ensureParticipantsBackendHeadersV2_();
 
-  // Il trigger viene creato dal Calendario prima che l'utente apra la nuova scheda.
-  // In questo modo l'autonumerazione task e lo stato DA FARE funzionano subito,
-  // anche se il menu del progetto bound impiega alcuni secondi a comparire.
-  ensureTaskEditTriggerV4_(child);
-
-  // Una nuova Scheda evento deve essere una copia FEDELE del modello.
-  // Non ricostruiamo layout, formati, tabelle, menu o convalide subito dopo la copia.
-  // In questo modo ogni modifica fatta al MODELLO - Scheda evento viene ereditata davvero.
+  // Il modello resta la fonte autoritativa del layout e dei dropdown.
+  // Quando aggiorniamo una scheda esistente ricarichiamo solo i DATI delle task,
+  // senza riscrivere le proprieta della tabella nativa (voci/colori dropdown inclusi).
   if (!result.created) {
-    refreshTasksV4FromBackend_(eventId,event,child);
+    refreshTasksPreserveTemplateV6_(eventId,event,child);
     refreshParticipantsV3FromBackend_(eventId,event,child);
     refreshExpensesV4FromBackend_(eventId,event,child,folder.folderId);
     hideEventSheetTechnicalColumnsV3_(child);
   }
+
+  // Trigger leggero: numerazione e stato immediati, ma nessuna modifica alla tabella nativa.
+  ensureFastEventTaskTriggerV6_(child);
 
   setEventSheetLink_(event._row, child.getUrl());
   writeEventMetaV5_(child,eventId,event,folder.folderId);
@@ -37,6 +35,110 @@ function prepareEventSheetForSelectedEventV2() {
     SpreadsheetApp.getUi().ButtonSet.OK
   );
   return {created:result.created,id:child.getId(),url:child.getUrl()};
+}
+
+function refreshTasksPreserveTemplateV6_(eventId,event,child) {
+  ensureChecklistBackendHeadersV3_();
+  seedPresenceCheckTaskV3_(eventId,event,child);
+  ensureTaskNumbersAndDefaultDependenciesV3_(eventId,event);
+
+  const backendSheet = sh_(APP.SHEETS.CHECKLIST);
+  const backend = backendSheet.getDataRange().getValues().slice(1)
+    .filter(r => String(r[1]) === String(eventId));
+  const byId = {};
+  backend.forEach(r => { if (r[0]) byId[String(r[0])] = r; });
+  backend.sort((a,b) => Number(a[2]||999999)-Number(b[2]||999999) || Number(a[13]||999999)-Number(b[13]||999999));
+
+  const out = backend.map(r => {
+    const dep = r[14] ? byId[String(r[14])] : null;
+    return [
+      r[3]||'',
+      r[10]||'',
+      r[13]||'',
+      dep ? dep[13]||'' : '',
+      normalize_(r[6]) === 'COMPLETATA' ? 'FATTO' : (r[6]||'DA FARE'),
+      r[5]||''
+    ];
+  });
+
+  const sheet = child.getSheetByName(EVENT_SHEET.SHEETS.TASKS);
+  if (!sheet) throw new Error('Foglio Attività non trovato nella Scheda evento.');
+
+  const endRow = Math.min(TASKS_V4.ENTRY_END_ROW, sheet.getMaxRows());
+  if (endRow >= 2) sheet.getRange(2,1,endRow-1,TASKS_V4.VISIBLE_COLS).clearContent();
+  if (out.length) sheet.getRange(2,1,out.length,TASKS_V4.VISIBLE_COLS).setValues(out);
+
+  backend.forEach((r,index) => {
+    const row = index + 2;
+    const depId = String(r[14]||'').trim();
+    const status = normalize_(r[6]);
+    if (!depId || status === 'FATTO' || status === 'COMPLETATA') return;
+    const isPresenceCheck = normalize_(r[9]) === 'CHECK_CONFERME';
+    sheet.getRange(row,5).setFormula(taskLiveStatusFormulaV4_(row,isPresenceCheck));
+  });
+  return out.length;
+}
+
+function ensureFastEventTaskTriggerV6_(child) {
+  const sourceId = child.getId();
+  const triggers = ScriptApp.getProjectTriggers();
+  let fastExists = false;
+
+  triggers.forEach(t => {
+    let sameSource = false;
+    try { sameSource = t.getTriggerSourceId() === sourceId; } catch (e) {}
+    if (!sameSource) return;
+
+    const handler = t.getHandlerFunction();
+    if (handler === 'handleEventTaskEditV4') {
+      // Elimina il vecchio trigger che aggiornava anche la tabella nativa e quindi il dropdown.
+      ScriptApp.deleteTrigger(t);
+      return;
+    }
+    if (handler === 'handleFastEventTaskEditV6') fastExists = true;
+  });
+
+  if (!fastExists) {
+    ScriptApp.newTrigger('handleFastEventTaskEditV6')
+      .forSpreadsheet(sourceId)
+      .onEdit()
+      .create();
+  }
+}
+
+function handleFastEventTaskEditV6(e) {
+  if (!e || !e.range) return;
+  const sheet = e.range.getSheet();
+  if (sheet.getName() !== EVENT_SHEET.SHEETS.TASKS) return;
+
+  const firstRow = Math.max(2,e.range.getRow());
+  const lastRow = Math.min(TASKS_V4.ENTRY_END_ROW,e.range.getLastRow());
+  const firstCol = e.range.getColumn();
+  const lastCol = e.range.getLastColumn();
+  if (lastRow < firstRow || firstCol > 1 || lastCol < 1) return;
+
+  const descriptions = sheet.getRange(firstRow,1,lastRow-firstRow+1,1).getDisplayValues();
+  const numbers = sheet.getRange(firstRow,3,lastRow-firstRow+1,1).getValues();
+  const states = sheet.getRange(firstRow,5,lastRow-firstRow+1,1).getDisplayValues();
+
+  const allNumbers = sheet.getRange(2,3,Math.max(1,Math.min(TASKS_V4.ENTRY_END_ROW,sheet.getMaxRows())-1),1).getValues();
+  let nextNumber = allNumbers.reduce((max,row) => {
+    const n = Number(row[0]);
+    return Number.isFinite(n) && n > max ? n : max;
+  },0) + 1;
+
+  for (let i=0;i<descriptions.length;i++) {
+    const description = String(descriptions[i][0]||'').trim();
+    if (!description) continue;
+    const row = firstRow + i;
+
+    if (!(Number(numbers[i][0]) > 0)) {
+      sheet.getRange(row,3).setValue(nextNumber++);
+    }
+    if (!String(states[i][0]||'').trim()) {
+      sheet.getRange(row,5).setValue('DA FARE');
+    }
+  }
 }
 
 function getLinkedEventSheetForSaveV2_(event) {
@@ -76,7 +178,6 @@ function getExplicitLinkedEventSheetV3_(event) {
   try {
     return SpreadsheetApp.openById(id);
   } catch (e) {
-    // Link non più valido: lo consideriamo assente e verrà creata una nuova copia del modello.
     return null;
   }
 }
@@ -95,6 +196,10 @@ function syncSelectedEventSheetToCalendarV2() {
   const participantCount = syncParticipantsV3ToBackend_(eventId,event,child);
   const taskCount = syncTasksV4ToBackend_(eventId,event,child);
   const expenseCount = syncExpensesV4ToBackend_(eventId,event,child);
+
+  // Se questa vecchia funzione centrale viene usata, sostituiamo comunque
+  // l'eventuale trigger legacy con quello leggero per le modifiche successive.
+  ensureFastEventTaskTriggerV6_(child);
 
   SpreadsheetApp.flush();
 
@@ -125,7 +230,7 @@ function writeEventMetaV5_(child,eventId,event,folderId) {
     MASTER_SPREADSHEET_ID:APP.SPREADSHEET_ID,
     EVENT_FOLDER_ID:folderId,
     EVENT_SHEET_ID:child.getId(),
-    SYNC_VERSION:'5',
+    SYNC_VERSION:'6',
     EVENT_LABEL:buildEventSheetLabel_(event),
     EVENT_TYPE:String(event[APP.CALENDAR_HEADERS.TYPE]||''),
     EVENT_CLASS:String(event[APP.CALENDAR_HEADERS.CLASS]||''),
@@ -142,8 +247,6 @@ function writeEventMetaV5_(child,eventId,event,folderId) {
 }
 
 function getOrCreateEventSheetV3_(eventId,event,folderId) {
-  // Riutilizziamo SOLO la Scheda esplicitamente collegata nella colonna SCHEDA EVENTO.
-  // Non cerchiamo più file orfani nella cartella evento: se il link è vuoto, la scheda è nuova.
   let child = getExplicitLinkedEventSheetV3_(event);
   let created = false;
   if (!child) {
