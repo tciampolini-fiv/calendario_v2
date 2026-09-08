@@ -9,17 +9,26 @@ function prepareEventSheetForSelectedEventV2() {
 
   ensureChecklistBackendHeadersV3_();
   ensureParticipantsBackendHeadersV2_();
-  refreshTasksV4FromBackend_(eventId,event,child);
-  refreshParticipantsV3FromBackend_(eventId,event,child);
-  refreshExpensesV4FromBackend_(eventId,event,child,folder.folderId);
-  hideEventSheetTechnicalColumnsV3_(child);
+
+  // Una nuova Scheda evento deve essere una copia FEDELE del modello.
+  // Non ricostruiamo layout, formati, tabelle, menu o convalide subito dopo la copia.
+  // In questo modo ogni modifica fatta al MODELLO - Scheda evento viene ereditata davvero.
+  if (!result.created) {
+    refreshTasksV4FromBackend_(eventId,event,child);
+    refreshParticipantsV3FromBackend_(eventId,event,child);
+    refreshExpensesV4FromBackend_(eventId,event,child,folder.folderId);
+    hideEventSheetTechnicalColumnsV3_(child);
+  }
+
   setEventSheetLink_(event._row, child.getUrl());
   writeEventMetaV5_(child,eventId,event,folder.folderId);
   SpreadsheetApp.flush();
 
   SpreadsheetApp.getUi().alert(
-    result.created ? 'Scheda evento creata' : 'Scheda evento aggiornata',
-    'La scheda evento usa Attività, Spese e Partecipanti. Aprila dalla colonna SCHEDA EVENTO.',
+    result.created ? 'Scheda evento creata dal modello' : 'Scheda evento aggiornata',
+    result.created
+      ? 'È stata creata una nuova copia del MODELLO - Scheda evento nella cartella dell evento.'
+      : 'La scheda evento collegata è stata aggiornata con i dati del Calendario.',
     SpreadsheetApp.getUi().ButtonSet.OK
   );
   return {created:result.created,id:child.getId(),url:child.getUrl()};
@@ -43,6 +52,27 @@ function getLinkedEventSheetForSaveV2_(event) {
     return SpreadsheetApp.openById(id);
   } catch (e) {
     throw new Error('Non riesco ad aprire la Scheda evento collegata. Verifica il link nella colonna SCHEDA EVENTO.');
+  }
+}
+
+function getExplicitLinkedEventSheetV3_(event) {
+  if (!event || !event._row) return null;
+  const cal = sh_(APP.SHEETS.CALENDAR);
+  const map = headerMap_(cal);
+  const col = map[APP.CALENDAR_HEADERS.EVENT_SHEET];
+  if (!col) return null;
+
+  const cell = cal.getRange(event._row,col);
+  const rich = cell.getRichTextValue();
+  const url = (rich && rich.getLinkUrl()) || cell.getDisplayValue();
+  const id = extractDriveId_(url);
+  if (!id) return null;
+
+  try {
+    return SpreadsheetApp.openById(id);
+  } catch (e) {
+    // Link non più valido: lo consideriamo assente e verrà creata una nuova copia del modello.
+    return null;
   }
 }
 
@@ -107,7 +137,9 @@ function writeEventMetaV5_(child,eventId,event,folderId) {
 }
 
 function getOrCreateEventSheetV3_(eventId,event,folderId) {
-  let child = findEventSheet_(eventId,event,folderId);
+  // Riutilizziamo SOLO la Scheda esplicitamente collegata nella colonna SCHEDA EVENTO.
+  // Non cerchiamo più file orfani nella cartella evento: se il link è vuoto, la scheda è nuova.
+  let child = getExplicitLinkedEventSheetV3_(event);
   let created = false;
   if (!child) {
     const folder = DriveApp.getFolderById(folderId);
