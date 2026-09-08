@@ -7,13 +7,11 @@ function prepareEventSheetForSelectedEventV2() {
   const result = getOrCreateEventSheetV3_(eventId, event, folder.folderId);
   const child = result.spreadsheet;
 
-  migrateLegacyEventSheetToV3_(eventId,event,child,folder.folderId);
   ensureChecklistBackendHeadersV3_();
   ensureParticipantsBackendHeadersV2_();
   refreshTasksV4FromBackend_(eventId,event,child);
   refreshParticipantsV3FromBackend_(eventId,event,child);
   refreshExpensesV4FromBackend_(eventId,event,child,folder.folderId);
-  ensureEventSheetEditTriggerV5_(child);
   hideEventSheetTechnicalColumnsV3_(child);
   setEventSheetLink_(event._row, child.getUrl());
   writeEventMetaV5_(child,eventId,event,folder.folderId);
@@ -53,21 +51,16 @@ function syncSelectedEventSheetToCalendarV2() {
   const event = selectedEvent_();
   const eventId = ensureEventId_(event);
 
-  // SALVA e un flusso esclusivamente Scheda evento -> backend -> Calendario.
-  // Non crea una scheda, non migra e non ricarica i dati dal Calendario prima di leggerli.
   const child = getLinkedEventSheetForSaveV2_(event);
   validateEventSheetIdentity_(child,eventId);
 
   ensureChecklistBackendHeadersV3_();
   ensureParticipantsBackendHeadersV2_();
 
-  // Prima i partecipanti: gli eventuali rimborsi passati alimentano poi le Spese.
   const participantCount = syncParticipantsV3ToBackend_(eventId,event,child);
   const taskCount = syncTasksV4ToBackend_(eventId,event,child);
   const expenseCount = syncExpensesV4ToBackend_(eventId,event,child);
 
-  // Le colonne di riepilogo del Calendario sono formule che leggono _CHECKLIST e _SPESE.
-  // Basta quindi aggiornare correttamente i backend e forzare il ricalcolo.
   SpreadsheetApp.flush();
 
   const counts = {
@@ -150,26 +143,6 @@ function ensureEventSheetBaseV3_(child,eventId,folderId,event) {
 
   writeEventMetaV5_(child,eventId,event,folderId);
   meta.hideSheet();
-}
-
-function migrateLegacyEventSheetToV3_(eventId,event,child,folderId) {
-  const tasks = child.getSheetByName(EVENT_SHEET.SHEETS.TASKS);
-  if (isLegacyTaskSheetV3_(tasks)) syncTasksFromEventSheet_(eventId,child);
-
-  const expenses = child.getSheetByName(EVENT_SHEET.SHEETS.EXPENSES);
-  if (isLegacyExpenseSheetV3_(expenses)) syncExpensesFromEventSheet_(eventId,child);
-
-  // Se è ancora la vecchia vista Spese V3, la leggiamo prima di trasformarla nel nuovo cruscotto.
-  if (expenses && normalize_(expenses.getRange('A1').getDisplayValue()) === 'IMPORTO') {
-    syncExpensesV3ToBackend_(eventId,event,child);
-  }
-
-  ensureChecklistBackendHeadersV3_();
-  ensureParticipantsBackendHeadersV2_();
-  refreshTasksV4FromBackend_(eventId,event,child);
-  refreshParticipantsV3FromBackend_(eventId,event,child);
-  refreshExpensesV4FromBackend_(eventId,event,child,folderId);
-  hideEventSheetTechnicalColumnsV3_(child);
 }
 
 function hideEventSheetTechnicalColumnsV3_(child) {
