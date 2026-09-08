@@ -10,6 +10,11 @@ function prepareEventSheetForSelectedEventV2() {
   ensureChecklistBackendHeadersV3_();
   ensureParticipantsBackendHeadersV2_();
 
+  // Il trigger viene creato dal Calendario prima che l'utente apra la nuova scheda.
+  // In questo modo l'autonumerazione task e lo stato DA FARE funzionano subito,
+  // anche se il menu del progetto bound impiega alcuni secondi a comparire.
+  ensureTaskEditTriggerV4_(child);
+
   // Una nuova Scheda evento deve essere una copia FEDELE del modello.
   // Non ricostruiamo layout, formati, tabelle, menu o convalide subito dopo la copia.
   // In questo modo ogni modifica fatta al MODELLO - Scheda evento viene ereditata davvero.
