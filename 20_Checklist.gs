@@ -1,3 +1,5 @@
+const CHECKLIST_DEPENDENCY_DELAY_DAYS = 2;
+
 function getChecklistRowsForEventRaw_(eventId) {
   const rows = sh_(APP.SHEETS.CHECKLIST).getDataRange().getValues();
   return rows.slice(1).filter(r => String(r[1]) === String(eventId)).map(r => ({
@@ -67,22 +69,43 @@ function eventHasEnded_(event, today) {
   return day > endDay;
 }
 
-function taskDueBeforeToday_(value, today) {
+function taskDueReached_(value, today) {
   if (!(value instanceof Date)) return false;
   const due = new Date(value);
   due.setHours(0, 0, 0, 0);
-  return due < today;
+  const day = today instanceof Date ? new Date(today) : new Date();
+  day.setHours(0, 0, 0, 0);
+  return due.getTime() <= day.getTime();
+}
+
+function dependentTaskDueDate_(previous, today) {
+  if (!previous) return '';
+  let base = previous.values[11] instanceof Date ? previous.values[11] : null;
+  if (!base && previous.values[12] instanceof Date) base = previous.values[12];
+  if (!base) base = today instanceof Date ? today : new Date();
+  const due = new Date(base);
+  due.setHours(12, 0, 0, 0);
+  due.setDate(due.getDate() + CHECKLIST_DEPENDENCY_DELAY_DAYS);
+  return due;
+}
+
+function sameCalendarDay_(a, b) {
+  if (!(a instanceof Date) || !(b instanceof Date)) return false;
+  return a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate();
 }
 
 /**
  * Gestisce le attività STANDARD e AUTO senza nasconderle mai.
  *
  * - attività iniziali: DA FARE;
- * - attività che dipendono da una richiesta precedente: IN ATTESA finché la richiesta non è FATTA;
- * - dopo la richiesta: restano IN ATTESA della risposta; alla scadenza diventano DA FARE (sollecito);
- * - se l'utente anticipa manualmente una task impostandola DA FARE, lo stato viene rispettato;
- * - attività legate alla fine evento (es. Ringraziamento Circolo) restano IN ATTESA fino al giorno successivo alla fine;
- * - fattura dopo AFOR: IN ATTESA fino a fine evento, poi DA FARE.
+ * - attività dipendenti: IN ATTESA finché la task madre non è FATTO;
+ * - quando la task madre diventa FATTO, la scadenza della figlia viene fissata a +2 giorni;
+ * - la figlia diventa DA FARE solo quando la sua scadenza è arrivata;
+ * - Conferma presenze tutti atleti conserva la scadenza inserita dalla convocazione;
+ * - attività legate alla fine evento restano IN ATTESA fino alla propria scadenza;
+ * - fattura dopo AFOR resta IN ATTESA fino alla propria scadenza.
  */
 function syncChecklistLocksForEvent_(eventId) {
   const found = findCalendarEventById_(eventId);
@@ -103,8 +126,8 @@ function syncChecklistLocksForEvent_(eventId) {
 
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  const ended = eventHasEnded_(event, today);
-  const updates = [];
+  const statusUpdates = [];
+  const dueUpdates = [];
 
   eventRows.forEach(item => {
     let current = normalize_(item.values[6]);
@@ -118,39 +141,53 @@ function syncChecklistLocksForEvent_(eventId) {
       managed = true;
       const rule = rules[item.key] || {};
 
-      if (rule.unlockDateBase === 'FINE') {
-        desired = ended ? 'DA FARE' : 'IN ATTESA';
-      } else if (rule.dependsOn) {
+      if (rule.dependsOn) {
         const previous = byKey[rule.dependsOn];
         const previousStatus = previous ? normalize_(previous.values[6]) : '';
         const previousDone = previousStatus === 'FATTO' || previousStatus === 'COMPLETATA';
+        const isPresenceCheck = item.key === 'CHECK_CONFERME';
+
         if (!previousDone) {
           desired = 'IN ATTESA';
-        } else if (taskDueBeforeToday_(item.values[5], today)) {
-          desired = 'DA FARE';
-        } else if (current === 'DA FARE') {
-          // Consente un sollecito anticipato impostato volontariamente dall'utente.
-          desired = 'DA FARE';
+          if (!isPresenceCheck && item.values[5] instanceof Date) {
+            dueUpdates.push({row:item.row, due:''});
+            item.values[5] = '';
+          }
         } else {
-          desired = 'IN ATTESA';
+          if (!isPresenceCheck) {
+            const due = dependentTaskDueDate_(previous, today);
+            if (!(item.values[5] instanceof Date) || !sameCalendarDay_(item.values[5], due)) {
+              dueUpdates.push({row:item.row, due:due});
+              item.values[5] = due;
+            }
+          }
+          desired = taskDueReached_(item.values[5], today) ? 'DA FARE' : 'IN ATTESA';
         }
+      } else if (rule.unlockDateBase === 'FINE') {
+        desired = taskDueReached_(item.values[5], today) ? 'DA FARE' : 'IN ATTESA';
       } else {
         desired = 'DA FARE';
       }
     } else if (item.source === 'AUTO' && item.key.indexOf('FATTURA_AFOR:') === 0) {
       managed = true;
-      desired = ended ? 'DA FARE' : 'IN ATTESA';
+      desired = taskDueReached_(item.values[5], today) ? 'DA FARE' : 'IN ATTESA';
     }
 
     if (!managed) return;
-    if (normalize_(item.values[6]) !== desired) updates.push({ row: item.row, status: desired });
+    if (normalize_(item.values[6]) !== desired) statusUpdates.push({ row: item.row, status: desired });
   });
 
-  updates.forEach(u => {
+  dueUpdates.forEach(u => {
+    const cell = sheet.getRange(u.row, 6);
+    if (u.due instanceof Date) cell.setValue(u.due).setNumberFormat('dd/MM/yyyy');
+    else cell.clearContent();
+    sheet.getRange(u.row, 13).setValue(new Date());
+  });
+  statusUpdates.forEach(u => {
     sheet.getRange(u.row, 7).setValue(u.status);
     sheet.getRange(u.row, 13).setValue(new Date());
   });
-  if (updates.length) SpreadsheetApp.flush();
+  if (dueUpdates.length || statusUpdates.length) SpreadsheetApp.flush();
 }
 
 function syncAllChecklistLocks_() {
