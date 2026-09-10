@@ -12,20 +12,35 @@ function prepareEventSheetForSelectedEventV2() {
   return{created:result.created,id:child.getId(),url:child.getUrl()};
 }
 
+function isEventSheetV11_(child){
+  const expenses=child&&child.getSheetByName(EVENT_SHEET.SHEETS.EXPENSES);
+  if(!expenses)return false;
+  return normalize_(expenses.getRange('A8').getDisplayValue())==='N. PREVENTIVO'&&
+    normalize_(expenses.getRange('C8').getDisplayValue())==='IMPORTO'&&
+    normalize_(expenses.getRange('G8').getDisplayValue())==='IMP'&&
+    normalize_(expenses.getRange('B12').getDisplayValue())==='N. PAGAMENTO'&&
+    normalize_(expenses.getRange('A19').getDisplayValue())==='N. PREVENTIVO'&&
+    normalize_(expenses.getRange('B19').getDisplayValue())==='TIPO PAGAMENTO'&&
+    normalize_(expenses.getRange('C19').getDisplayValue())==='IMPORTO';
+}
+
 function isEventSheetV7_(child){
   const expenses=child&&child.getSheetByName(EVENT_SHEET.SHEETS.EXPENSES),participants=child&&child.getSheetByName(PARTICIPANTS_V3.SHEET);
   if(!expenses||!participants||normalize_(participants.getRange('H2').getDisplayValue())!=='RUOLO')return false;
+  const isV11=isEventSheetV11_(child);
   const isV10=normalize_(expenses.getRange('A19').getDisplayValue())==='N. PREVENTIVO'&&normalize_(expenses.getRange('B19').getDisplayValue())==='TIPO PAGAMENTO'&&normalize_(expenses.getRange('C19').getDisplayValue())==='IMPORTO';
   const isV8=normalize_(expenses.getRange('A19').getDisplayValue())==='DESCRIZIONE'&&normalize_(expenses.getRange('C19').getDisplayValue())==='MOVIMENTO';
   const isV7=normalize_(expenses.getRange('A13').getDisplayValue())==='PREVENTIVO'&&normalize_(expenses.getRange('E13').getDisplayValue())==='PAGAMENTO 1';
-  return isV10||isV8||isV7;
+  return isV11||isV10||isV8||isV7;
 }
+
 function isEventSheetV8_(child){
   const expenses=child&&child.getSheetByName(EVENT_SHEET.SHEETS.EXPENSES);
   if(!expenses)return false;
+  const isV11=isEventSheetV11_(child);
   const isV10=normalize_(expenses.getRange('A19').getDisplayValue())==='N. PREVENTIVO'&&normalize_(expenses.getRange('B19').getDisplayValue())==='TIPO PAGAMENTO'&&normalize_(expenses.getRange('C19').getDisplayValue())==='IMPORTO';
   const isV8=normalize_(expenses.getRange('A19').getDisplayValue())==='DESCRIZIONE'&&normalize_(expenses.getRange('C19').getDisplayValue())==='MOVIMENTO';
-  return isV10||isV8;
+  return isV11||isV10||isV8;
 }
 
 function refreshTasksPreserveTemplateV6_(eventId,event,child){
@@ -87,10 +102,26 @@ function canonicalEventClassV7_(value){const c=normalizeTaskTextFastV7_(value);r
 function resolveEventCommitmentV7_(event){const type=canonicalEventTypeV7_(event[APP.CALENDAR_HEADERS.TYPE]),cls=canonicalEventClassV7_(event[APP.CALENDAR_HEADERS.CLASS]),config=sh_('_CONFIG_IMPEGNI').getDataRange().getDisplayValues();let wildcard='';for(let i=1;i<config.length;i++){if(canonicalEventTypeV7_(config[i][0])!==type)continue;const cfgClass=canonicalEventClassV7_(config[i][1]),imp=String(config[i][2]||'').trim();if(!imp)continue;if(cfgClass===cls||(cfgClass==='TUTTE'&&cls))return imp;if(!cfgClass||cfgClass==='*')wildcard=imp;}return wildcard;}
 function technicianDirectoryV7_(){return[['ZAGGIA','Leonardo','Zaggia'],['CRISI','Andrea','Crisi'],['RAVEGLIA','Matteo','Raveglia'],['CARICATO','Francesco','Caricato'],['PICCIAU','Gianluigi','Picciau'],['SENSINI','Alessandra','Sensini'],['NUICOLUCCI','Matteo','Nuicolucci'],['CAMBONI','Mattia','Camboni'],['CANGEMI','Antonino','Cangemi'],['LOPERFIDO','Daniel','Loperfido']];}
 function resolveFullTechniciansV7_(raw){const text=normalizeTaskTextFastV7_(raw);if(!text)return[];return technicianDirectoryV7_().filter(x=>text.indexOf(x[0])>=0);}
-function initializeEventSheetV7FromCalendar_(child,eventId,event,folderId){writeEventMetaV5_(child,eventId,event,folderId);const imp=resolveEventCommitmentV7_(event)||String(event[APP.CALENDAR_HEADERS.COMMITMENT]||'').trim();if(imp){const cal=sh_(APP.SHEETS.CALENDAR),map=headerMap_(cal),col=map[APP.CALENDAR_HEADERS.COMMITMENT];if(col&&event._row)cal.getRange(event._row,col).setValue(imp).setNumberFormat('@');const expenses=child.getSheetByName(EVENT_SHEET.SHEETS.EXPENSES);if(expenses){if(isEventSheetV8_(child))expenses.getRange('E9').setValue(imp).setNumberFormat('@');else expenses.getRange('N9').setValue(imp).setNumberFormat('@');}}populateTechniciansInEventSheetV7_(child,event);}
+
+function initializeEventSheetV7FromCalendar_(child,eventId,event,folderId){
+  writeEventMetaV5_(child,eventId,event,folderId);
+  const imp=resolveEventCommitmentV7_(event)||String(event[APP.CALENDAR_HEADERS.COMMITMENT]||'').trim();
+  if(imp){
+    const cal=sh_(APP.SHEETS.CALENDAR),map=headerMap_(cal),col=map[APP.CALENDAR_HEADERS.COMMITMENT];
+    if(col&&event._row)cal.getRange(event._row,col).setValue(imp).setNumberFormat('@');
+    const expenses=child.getSheetByName(EVENT_SHEET.SHEETS.EXPENSES);
+    if(expenses){
+      if(isEventSheetV11_(child))expenses.getRange('G9').setValue(imp).setNumberFormat('@');
+      else if(isEventSheetV8_(child))expenses.getRange('E9').setValue(imp).setNumberFormat('@');
+      else expenses.getRange('N9').setValue(imp).setNumberFormat('@');
+    }
+  }
+  populateTechniciansInEventSheetV7_(child,event);
+}
+
 function populateTechniciansInEventSheetV7_(child,event){const people=resolveFullTechniciansV7_(event[APP.CALENDAR_HEADERS.TECHNICIANS]);if(!people.length)return;const sheet=child.getSheetByName(PARTICIPANTS_V3.SHEET);if(!sheet||normalize_(sheet.getRange('H2').getDisplayValue())!=='RUOLO')return;const existing=sheet.getRange(3,1,15,2).getDisplayValues(),existingNames=new Set(existing.map(r=>normalizeTaskTextFastV7_((r[0]||'')+' '+(r[1]||''))));people.forEach(x=>{const fullKey=normalizeTaskTextFastV7_(x[1]+' '+x[2]);if(existingNames.has(fullKey))return;let target=0;for(let i=0;i<existing.length;i++)if(!String(existing[i][0]||'').trim()&&!String(existing[i][1]||'').trim()){target=i+3;existing[i]=[x[1],x[2]];break;}if(!target)return;sheet.getRange(target,1).setValue(x[1]);sheet.getRange(target,2).setValue(x[2]);sheet.getRange(target,8).setValue('TECNICO');sheet.getRange(target,9).setValue('CONFERMATO');existingNames.add(fullKey);});}
 
-function writeEventMetaV5_(child,eventId,event,folderId){const meta=child.getSheetByName(EVENT_SHEET.SHEETS.META),start=event[APP.CALENDAR_HEADERS.START],end=event[APP.CALENDAR_HEADERS.END],imp=resolveEventCommitmentV7_(event)||String(event[APP.CALENDAR_HEADERS.COMMITMENT]||'').trim(),technicians=resolveFullTechniciansV7_(event[APP.CALENDAR_HEADERS.TECHNICIANS]),fullTechnicians=technicians.length?technicians.map(x=>x[1]+' '+x[2]).join(', '):String(event[APP.CALENDAR_HEADERS.TECHNICIANS]||'');writeMeta_(meta,{EVENT_ID:eventId,MASTER_SPREADSHEET_ID:APP.SPREADSHEET_ID,EVENT_FOLDER_ID:folderId,EVENT_SHEET_ID:child.getId(),SYNC_VERSION:'10',EVENT_LABEL:buildEventSheetLabel_(event),EVENT_TYPE:String(event[APP.CALENDAR_HEADERS.TYPE]||''),EVENT_CLASS:String(event[APP.CALENDAR_HEADERS.CLASS]||''),EVENT_LOCATION:String(event[APP.CALENDAR_HEADERS.LOCATION]||''),EVENT_ZONE:String(event[APP.CALENDAR_HEADERS.ZONE]||''),EVENT_CLUB:String(event[APP.CALENDAR_HEADERS.CLUB]||''),EVENT_TECHNICIANS:fullTechnicians,EVENT_LODGING:String(event[APP.CALENDAR_HEADERS.LODGING]||''),EVENT_COMMITMENT:imp,EVENT_START:start instanceof Date?Utilities.formatDate(start,APP.TZ,'yyyy-MM-dd'):'',EVENT_END:end instanceof Date?Utilities.formatDate(end,APP.TZ,'yyyy-MM-dd'):'',LAST_SYNC:Utilities.formatDate(new Date(),APP.TZ,'dd/MM/yyyy HH:mm')});}
+function writeEventMetaV5_(child,eventId,event,folderId){const meta=child.getSheetByName(EVENT_SHEET.SHEETS.META),start=event[APP.CALENDAR_HEADERS.START],end=event[APP.CALENDAR_HEADERS.END],imp=resolveEventCommitmentV7_(event)||String(event[APP.CALENDAR_HEADERS.COMMITMENT]||'').trim(),technicians=resolveFullTechniciansV7_(event[APP.CALENDAR_HEADERS.TECHNICIANS]),fullTechnicians=technicians.length?technicians.map(x=>x[1]+' '+x[2]).join(', '):String(event[APP.CALENDAR_HEADERS.TECHNICIANS]||'');writeMeta_(meta,{EVENT_ID:eventId,MASTER_SPREADSHEET_ID:APP.SPREADSHEET_ID,EVENT_FOLDER_ID:folderId,EVENT_SHEET_ID:child.getId(),SYNC_VERSION:'11',EVENT_LABEL:buildEventSheetLabel_(event),EVENT_TYPE:String(event[APP.CALENDAR_HEADERS.TYPE]||''),EVENT_CLASS:String(event[APP.CALENDAR_HEADERS.CLASS]||''),EVENT_LOCATION:String(event[APP.CALENDAR_HEADERS.LOCATION]||''),EVENT_ZONE:String(event[APP.CALENDAR_HEADERS.ZONE]||''),EVENT_CLUB:String(event[APP.CALENDAR_HEADERS.CLUB]||''),EVENT_TECHNICIANS:fullTechnicians,EVENT_LODGING:String(event[APP.CALENDAR_HEADERS.LODGING]||''),EVENT_COMMITMENT:imp,EVENT_START:start instanceof Date?Utilities.formatDate(start,APP.TZ,'yyyy-MM-dd'):'',EVENT_END:end instanceof Date?Utilities.formatDate(end,APP.TZ,'yyyy-MM-dd'):'',LAST_SYNC:Utilities.formatDate(new Date(),APP.TZ,'dd/MM/yyyy HH:mm')});}
 function getOrCreateEventSheetV3_(eventId,event,folderId){let child=getExplicitLinkedEventSheetV3_(event),created=false;if(!child){const folder=DriveApp.getFolderById(folderId),templateFile=DriveApp.getFileById(EVENT_SHEET_TEMPLATE_ID_V3),copy=templateFile.makeCopy(buildEventSheetName_(event),folder);child=SpreadsheetApp.openById(copy.getId());child.setSpreadsheetLocale('it_IT');child.setSpreadsheetTimeZone(APP.TZ);created=true;}ensureEventSheetBaseV3_(child,eventId,folderId,event);return{spreadsheet:child,created:created};}
 function ensureEventSheetBaseV3_(child,eventId,folderId,event){child.setSpreadsheetLocale('it_IT');child.setSpreadsheetTimeZone(APP.TZ);let tasks=child.getSheetByName(EVENT_SHEET.SHEETS.TASKS);if(!tasks){const first=child.getSheets()[0];if(child.getSheets().length===1&&first.getLastRow()===0){first.setName(EVENT_SHEET.SHEETS.TASKS);tasks=first;}else tasks=child.insertSheet(EVENT_SHEET.SHEETS.TASKS,0);}if(!child.getSheetByName(EVENT_SHEET.SHEETS.EXPENSES))child.insertSheet(EVENT_SHEET.SHEETS.EXPENSES);if(!child.getSheetByName(PARTICIPANTS_V3.SHEET))child.insertSheet(PARTICIPANTS_V3.SHEET);let meta=child.getSheetByName(EVENT_SHEET.SHEETS.META);if(!meta)meta=child.insertSheet(EVENT_SHEET.SHEETS.META);writeEventMetaV5_(child,eventId,event,folderId);meta.hideSheet();}
 function hideEventSheetTechnicalColumnsV3_(child){const tasks=child.getSheetByName(EVENT_SHEET.SHEETS.TASKS);if(tasks){tasks.showColumns(1,TASKS_V4.VISIBLE_COLS);if(tasks.getMaxColumns()>TASKS_V4.VISIBLE_COLS)tasks.hideColumns(TASKS_V4.VISIBLE_COLS+1,tasks.getMaxColumns()-TASKS_V4.VISIBLE_COLS);}const expenses=child.getSheetByName(EVENT_SHEET.SHEETS.EXPENSES);if(expenses){expenses.showColumns(1,EXPENSES_V4.VISIBLE_COLS);if(expenses.getMaxColumns()>EXPENSES_V4.VISIBLE_COLS)expenses.hideColumns(EXPENSES_V4.VISIBLE_COLS+1,expenses.getMaxColumns()-EXPENSES_V4.VISIBLE_COLS);}const participants=child.getSheetByName(PARTICIPANTS_V3.SHEET);if(participants){participants.showColumns(1,PARTICIPANTS_V3.VISIBLE_COLS);if(participants.getMaxColumns()>PARTICIPANTS_V3.VISIBLE_COLS)participants.hideColumns(PARTICIPANTS_V3.VISIBLE_COLS+1,participants.getMaxColumns()-PARTICIPANTS_V3.VISIBLE_COLS);}}
