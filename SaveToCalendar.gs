@@ -73,10 +73,10 @@ function eventTaskCategory_(description){const d=eventNormalize_(description);if
 function eventSaveParticipants_(master,child,eventId){
   const local=child.getSheetByName(EVENT_APP.SHEETS.PARTICIPANTS);if(!local)throw new Error('Foglio Partecipanti non trovato nella Scheda evento.');
   const backend=eventMasterSheet_(master,'_PARTECIPANTI'),oldRows=backend.getDataRange().getValues(),oldById={};for(let i=1;i<oldRows.length;i++)if(String(oldRows[i][1]||'')===String(eventId)&&oldRows[i][0])oldById[String(oldRows[i][0])]=oldRows[i];
-  const now=new Date(),rows=[],convTech=[],aggTech=[],conv=local.getRange(3,1,15,19).getValues(),agg=local.getRange(20,1,20,19).getValues();
+  const now=new Date(),rows=[],convTech=[],aggTech=[],conv=local.getRange(3,1,20,19).getValues(),agg=local.getRange(25,1,20,19).getValues();
   conv.forEach(r=>{const parsed=eventParticipantRowV7_(r,'CONVOCATO',eventId,oldById,now);if(!parsed){convTech.push(['','','','','','']);return;}rows.push(parsed.backend);convTech.push(parsed.tech);});
   agg.forEach(r=>{const parsed=eventParticipantRowV7_(r,'AGGREGATO',eventId,oldById,now);if(!parsed){aggTech.push(['','','','','','']);return;}rows.push(parsed.backend);aggTech.push(parsed.tech);});
-  eventReplaceRowsForEvent_(backend,eventId,2,rows,17);local.getRange(3,14,convTech.length,6).setValues(convTech);local.getRange(20,14,aggTech.length,6).setValues(aggTech);return rows.length;
+  eventReplaceRowsForEvent_(backend,eventId,2,rows,17);local.getRange(3,14,convTech.length,6).setValues(convTech);local.getRange(25,14,aggTech.length,6).setValues(aggTech);return rows.length;
 }
 function eventParticipantRowV7_(r,type,eventId,oldById,now){
   const name=String(r[0]||'').trim(),surname=String(r[1]||'').trim();if(!name&&!surname)return null;let id=String(r[13]||'').trim();const old=id&&oldById[id]?oldById[id]:null;if(!id)id='PAR-'+Utilities.getUuid();
