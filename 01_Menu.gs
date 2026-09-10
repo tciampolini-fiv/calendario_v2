@@ -4,6 +4,8 @@ function onOpen() {
     .addItem('Crea / aggiorna scheda ← Calendario', 'prepareEventSheetForSelectedEventV2')
     .addItem('Salva modifiche scheda → Calendario', 'syncSelectedEventSheetToCalendarV2')
     .addSeparator()
+    .addItem('Migra scheda selezionata → V11', 'migrateSelectedEventSheetToV11')
+    .addSeparator()
     .addItem('Crea cartella di lavoro', 'createWorkFolderForSelectedEvent')
     .addItem('Genera documenti evento', 'generateDocumentsForSelectedEvent')
     .addToUi();
