@@ -17,7 +17,7 @@ const EVENT_APP = Object.freeze({
 function onEdit(e) {
   if (!e || !e.range) return;
   const sheet=e.range.getSheet();
-  if (sheet.getName()===EVENT_APP.SHEETS.TASKS) { eventHandleTaskEditV7_(e); return; }
+  if (sheet.getName()===EVENT_APP.SHEETS.TASKS) { eventHandleTaskEditV9_(e); return; }
   if (sheet.getName()===EVENT_APP.SHEETS.EXPENSES) { eventHandleExpenseEditV8_(e); return; }
   if (sheet.getName()===EVENT_APP.SHEETS.PARTICIPANTS) {
     const row=e.range.getRow();
@@ -30,53 +30,148 @@ function eventInitializeV7_() {
   if (!String(meta.EVENT_ID||'').trim()) return false;
   eventApplyCommitmentV8_(meta);
   eventPopulateTechniciansV7_(meta);
-  eventAutoLinkConfirmationTasksV7_();
-  eventRefreshTaskDependencyStatesV7_();
+  eventAutoLinkConfirmationTasksV9_();
+  eventRefreshTaskDependencyStatesV9_();
   eventSyncExpenseTasksV8_();
   eventRefreshExpenseDashboardV8_();
   return true;
 }
 
-function eventTaskStatusFormulaV7_(row) {
-  return '=IF(A'+row+'="";"";IF(D'+row+'="";"DA FARE";IFERROR(IF(INDEX($E$2:$E$500;MATCH(D'+row+';$C$2:$C$500;0))="FATTO";"DA FARE";"IN ATTESA");"IN ATTESA")))';
+function eventTaskStatusFormulaV9_(row) {
+  return '=IF(A'+row+'="";"";IF(D'+row+'="";"DA FARE";IFERROR(IF(AND(INDEX($E$2:$E$500;MATCH(D'+row+';$C$2:$C$500;0))="FATTO";$F'+row+'<>"";$F'+row+'<=TODAY());"DA FARE";"IN ATTESA");"IN ATTESA")))';
 }
 
-function eventHandleTaskEditV7_(e) {
+function eventHandleTaskEditV9_(e) {
   const sheet=e.range.getSheet();
   const firstRow=Math.max(2,e.range.getRow());
   const lastRow=Math.min(500,e.range.getLastRow());
   const firstCol=e.range.getColumn();
   const lastCol=e.range.getLastColumn();
   if (lastRow<firstRow||firstCol>6) return;
-  if (firstCol<=1&&lastCol>=1) for(let row=firstRow;row<=lastRow;row++) eventPrepareTaskRowV7_(sheet,row);
-  if (firstCol<=4&&lastCol>=4) for(let row=firstRow;row<=lastRow;row++) eventApplyTaskDependencyV7_(sheet,row);
-  if (firstCol<=5&&lastCol>=5) eventRefreshTaskDependencyStatesV7_();
+
+  if (firstCol<=1&&lastCol>=1) {
+    for(let row=firstRow;row<=lastRow;row++) eventPrepareTaskRowV9_(sheet,row);
+  }
+  if (firstCol<=4&&lastCol>=4) {
+    for(let row=firstRow;row<=lastRow;row++) eventApplyTaskDependencyV9_(sheet,row);
+  }
+  if (firstCol<=5&&lastCol>=5) {
+    for(let row=firstRow;row<=lastRow;row++) {
+      if (eventNormalizeTextV7_(sheet.getRange(row,5).getDisplayValue())==='FATTO') {
+        eventScheduleDependentTasksV9_(sheet,row);
+      }
+    }
+    eventRefreshTaskDependencyStatesV9_();
+  }
+  if (firstCol<=6&&lastCol>=6) eventRefreshTaskDependencyStatesV9_();
 }
-function eventPrepareTaskRowV7_(sheet,row) {
-  const description=String(sheet.getRange(row,1).getDisplayValue()||'').trim(); if(!description)return;
+
+function eventPrepareTaskRowV9_(sheet,row) {
+  const description=String(sheet.getRange(row,1).getDisplayValue()||'').trim();
+  if(!description)return;
   const noCell=sheet.getRange(row,3);
   if (!(Number(noCell.getValue())>0)) {
     const nums=sheet.getRange(2,3,499,1).getValues().flat().map(Number).filter(n=>n>0);
     noCell.setValue(nums.length?Math.max.apply(null,nums)+1:1);
   }
-  eventAutoLinkConfirmationTaskRowV7_(sheet,row); eventApplyTaskDependencyV7_(sheet,row);
+  eventAutoLinkConfirmationTaskRowV9_(sheet,row);
+  eventApplyTaskDependencyV9_(sheet,row);
 }
-function eventApplyTaskDependencyV7_(sheet,row) {
-  const description=String(sheet.getRange(row,1).getDisplayValue()||'').trim(); if(!description)return;
-  const status=String(sheet.getRange(row,5).getDisplayValue()||'').trim().toUpperCase(); if(status==='FATTO')return;
+
+function eventApplyTaskDependencyV9_(sheet,row) {
+  const description=String(sheet.getRange(row,1).getDisplayValue()||'').trim();
+  if(!description)return;
+  const status=eventNormalizeTextV7_(sheet.getRange(row,5).getDisplayValue());
+  if(status==='FATTO')return;
   const depNo=Number(sheet.getRange(row,4).getValue()||0);
-  if(depNo>0)sheet.getRange(row,5).setFormula(eventTaskStatusFormulaV7_(row)); else if(!status||status==='IN ATTESA')sheet.getRange(row,5).setValue('DA FARE');
+  if(depNo>0) sheet.getRange(row,5).setFormula(eventTaskStatusFormulaV9_(row));
+  else if(!status||status==='IN ATTESA') sheet.getRange(row,5).setValue('DA FARE');
 }
-function eventRefreshTaskDependencyStatesV7_() {
-  const sheet=SpreadsheetApp.getActive().getSheetByName(EVENT_APP.SHEETS.TASKS); if(!sheet)return;
-  for(let row=2;row<=Math.min(500,Math.max(sheet.getLastRow(),2));row++){
-    const description=String(sheet.getRange(row,1).getDisplayValue()||'').trim(); if(!description)continue;
-    const depNo=Number(sheet.getRange(row,4).getValue()||0),status=String(sheet.getRange(row,5).getDisplayValue()||'').trim().toUpperCase();
-    if(depNo>0&&status!=='FATTO')sheet.getRange(row,5).setFormula(eventTaskStatusFormulaV7_(row)); else if(!depNo&&!status)sheet.getRange(row,5).setValue('DA FARE');
+
+function eventRefreshTaskDependencyStatesV9_() {
+  const sheet=SpreadsheetApp.getActive().getSheetByName(EVENT_APP.SHEETS.TASKS);
+  if(!sheet)return;
+  const last=Math.min(500,Math.max(sheet.getLastRow(),2));
+  const values=sheet.getRange(2,1,last-1,6).getValues();
+  const rowByNo={};
+  values.forEach((r,i)=>{const n=Number(r[2]||0);if(n>0)rowByNo[n]=i+2;});
+
+  for(let row=2;row<=last;row++) {
+    const description=String(sheet.getRange(row,1).getDisplayValue()||'').trim();
+    if(!description)continue;
+    const status=eventNormalizeTextV7_(sheet.getRange(row,5).getDisplayValue());
+    if(status==='FATTO')continue;
+    const depNo=Number(sheet.getRange(row,4).getValue()||0);
+    if(depNo>0) {
+      const parentRow=rowByNo[depNo]||0;
+      const parentDone=parentRow>0&&eventNormalizeTextV7_(sheet.getRange(parentRow,5).getDisplayValue())==='FATTO';
+      const due=sheet.getRange(row,6).getValue();
+      const dueReached=due instanceof Date&&eventDateReachedV9_(due);
+      if(parentDone&&dueReached) sheet.getRange(row,5).setValue('DA FARE');
+      else sheet.getRange(row,5).setFormula(eventTaskStatusFormulaV9_(row));
+    } else if(!status) {
+      sheet.getRange(row,5).setValue('DA FARE');
+    }
   }
 }
-function eventAutoLinkConfirmationTasksV7_(){const sheet=SpreadsheetApp.getActive().getSheetByName(EVENT_APP.SHEETS.TASKS);if(!sheet)return;for(let row=2;row<=Math.min(500,Math.max(sheet.getLastRow(),2));row++)eventAutoLinkConfirmationTaskRowV7_(sheet,row);}
-function eventAutoLinkConfirmationTaskRowV7_(sheet,row){if(Number(sheet.getRange(row,4).getValue()||0)>0)return;const desc=eventNormalizeTextV7_(sheet.getRange(row,1).getDisplayValue());if(!desc)return;let parent='';if(desc==='CHECK CONFERMA PRESENZE')parent='CONVOCAZIONE ATLETI';else if(desc==='CONFERMA OSPITALITA')parent='OSPITALITA CIRCOLO';else if(desc.indexOf('CONFERMA ')===0)parent=desc.substring(9).trim();if(!parent)return;const values=sheet.getRange(2,1,Math.max(1,row-2),3).getDisplayValues();for(let i=values.length-1;i>=0;i--)if(eventNormalizeTextV7_(values[i][0])===parent&&Number(values[i][2]||0)>0){sheet.getRange(row,4).setValue(Number(values[i][2]));return;}}
+
+function eventDateReachedV9_(date) {
+  if(!(date instanceof Date))return false;
+  const due=new Date(date); due.setHours(0,0,0,0);
+  const today=new Date(); today.setHours(0,0,0,0);
+  return due.getTime()<=today.getTime();
+}
+
+function eventScheduleDependentTasksV9_(sheet,parentRow) {
+  const parentNo=Number(sheet.getRange(parentRow,3).getValue()||0);
+  if(!(parentNo>0))return;
+  const last=Math.min(500,Math.max(sheet.getLastRow(),2));
+  const rows=sheet.getRange(2,1,last-1,6).getValues();
+  rows.forEach((r,i)=>{
+    const row=i+2;
+    if(Number(r[3]||0)!==parentNo)return;
+    const description=eventNormalizeTextV7_(r[0]);
+    const dueCell=sheet.getRange(row,6);
+    const existingDue=dueCell.getValue();
+    const isPresence=description==='CONFERMA PRESENZE TUTTI ATLETI';
+    if(!isPresence&&!(existingDue instanceof Date)) {
+      const due=new Date(); due.setHours(12,0,0,0); due.setDate(due.getDate()+2);
+      dueCell.setValue(due).setNumberFormat('dd/MM/yyyy');
+    }
+    if(eventNormalizeTextV7_(sheet.getRange(row,5).getDisplayValue())!=='FATTO') {
+      sheet.getRange(row,5).setFormula(eventTaskStatusFormulaV9_(row));
+    }
+  });
+}
+
+function eventAutoLinkConfirmationTasksV9_() {
+  const sheet=SpreadsheetApp.getActive().getSheetByName(EVENT_APP.SHEETS.TASKS);
+  if(!sheet)return;
+  for(let row=2;row<=Math.min(500,Math.max(sheet.getLastRow(),2));row++) eventAutoLinkConfirmationTaskRowV9_(sheet,row);
+}
+
+function eventAutoLinkConfirmationTaskRowV9_(sheet,row) {
+  if(Number(sheet.getRange(row,4).getValue()||0)>0)return;
+  const desc=eventNormalizeTextV7_(sheet.getRange(row,1).getDisplayValue());
+  if(!desc)return;
+  const parents={
+    'CONFERMA GOMMONE':'RICHIESTA GOMMONE',
+    'CONFERMA SOGGIORNO':'RICHIESTA SOGGIORNO',
+    'CONFERMA PASTI':'SOLUZIONE PASTI',
+    'CONFERMA PRESENZE TUTTI ATLETI':'CONVOCAZIONE ATLETI',
+    'CONFERMA OSPITALITA CIRCOLO':'OSPITALITA CIRCOLO'
+  };
+  const parent=parents[desc]||'';
+  if(!parent)return;
+  const values=sheet.getRange(2,1,Math.max(1,row-2),3).getDisplayValues();
+  for(let i=values.length-1;i>=0;i--) {
+    if(eventNormalizeTextV7_(values[i][0])===parent&&Number(values[i][2]||0)>0) {
+      sheet.getRange(row,4).setValue(Number(values[i][2]));
+      return;
+    }
+  }
+}
+
 function eventNormalizeTextV7_(value){return String(value===null||value===undefined?'':value).trim().toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/\s+/g,' ');}
 function eventMeta_(){const sheet=SpreadsheetApp.getActive().getSheetByName(EVENT_APP.SHEETS.META);if(!sheet)throw new Error('Foglio _META non trovato.');const values=sheet.getRange(1,1,sheet.getLastRow(),2).getDisplayValues();const out={};values.forEach(r=>{if(r[0])out[String(r[0]).trim()]=r[1];});return out;}
 function eventWriteLocalMetaV7_(key,value){const sheet=SpreadsheetApp.getActive().getSheetByName(EVENT_APP.SHEETS.META);if(!sheet)return;const rows=sheet.getRange(1,1,Math.max(sheet.getLastRow(),1),2).getDisplayValues(),target=eventNormalizeTextV7_(key);for(let i=0;i<rows.length;i++)if(eventNormalizeTextV7_(rows[i][0])===target){sheet.getRange(i+1,2).setValue(value);return;}sheet.appendRow([key,value]);}
