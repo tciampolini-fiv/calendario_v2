@@ -7,6 +7,7 @@ function onOpen() {
     .addSeparator()
     .addItem('📄 Genera documenti','eventGenerateDocuments')
     .addToUi();
+  try { eventInitializeV7_(); } catch (err) { console.log('Inizializzazione Scheda evento: ' + (err.message || err)); }
 }
 
 function eventSaveToCalendar() {
@@ -18,6 +19,7 @@ function eventSaveToCalendar() {
   if (!eventId) throw new Error('ID EVENTO mancante nel foglio _META.');
   if (!masterId) throw new Error('MASTER_SPREADSHEET_ID mancante nel foglio _META.');
 
+  eventInitializeV7_();
   const master = SpreadsheetApp.openById(masterId);
   const counts = {
     participants:eventSaveParticipants_(master,child,eventId),
@@ -71,6 +73,9 @@ function eventReplaceRowsForEvent_(sheet,eventId,eventColumn,newRows,width) {
 function eventSaveTasks_(master,child,eventId) {
   const local = child.getSheetByName(EVENT_APP.SHEETS.TASKS);
   if (!local) throw new Error('Foglio Attività non trovato nella Scheda evento.');
+  eventAutoLinkConfirmationTasksV7_();
+  eventRefreshTaskDependencyStatesV7_();
+
   const backend = eventMasterSheet_(master,'_CHECKLIST');
   const oldRows = backend.getDataRange().getValues();
   const oldByNo = {};
@@ -121,10 +126,11 @@ function eventSaveTasks_(master,child,eventId) {
     if (!['DA FARE','IN ATTESA','FATTO'].includes(status)) status = 'DA FARE';
     const completed = status === 'FATTO' ? (old[11] instanceof Date ? old[11] : now) : '';
     const description = String(r[0] || '').trim();
+    const autoKey = old[9] || eventTaskAutoKey_(description);
     return [
       x.id,eventId,(index+1)*10,description,
       old[4] || eventTaskCategory_(description),
-      r[5] instanceof Date ? r[5] : '',status,old[7] || '',old[8] || 'MANUALE',old[9] || '',
+      r[5] instanceof Date ? r[5] : '',status,old[7] || '',old[8] || (autoKey ? 'AUTO' : 'MANUALE'),autoKey,
       String(r[1] || '').trim(),completed,now,x.no,depNo ? idByNo[depNo] : '',
       status !== 'FATTO' && depNo ? 'DIPENDENZA' : ''
     ];
@@ -133,11 +139,23 @@ function eventSaveTasks_(master,child,eventId) {
   return rows.length;
 }
 
+function eventTaskAutoKey_(description) {
+  const d = eventNormalizeTextV7_(description);
+  const direct = {
+    'GOMMONE':'GOMMONE','CONFERMA GOMMONE':'CONF_GOMMONE','SOGGIORNO':'SOGGIORNO','CONFERMA SOGGIORNO':'CONF_SOGGIORNO',
+    'PASTI':'PASTI','CONFERMA PASTI':'CONF_PASTI','VIAGGIO TECNICO':'VIAGGIO_TECNICO','CONVOCAZIONE ATLETI':'CONV_ATLETI',
+    'CONVOCAZIONE TECNICO':'CONV_TECNICO','CHECK CONFERMA PRESENZE':'CHECK_CONFERME','OSPITALITA CIRCOLO':'OSPITALITA_CIRCOLO',
+    'CONFERMA OSPITALITA':'CONF_OSPITALITA','RINGRAZIAMENTO CIRCOLO':'RINGRAZIAMENTO_CIRCOLO','INVIARE CONTABILE':'CONTABILE_INVIA',
+    'RICHIEDERE CONTABILE':'CONTABILE_RICHIEDI'
+  };
+  return direct[d] || (d.indexOf('SALDO ')===0 ? 'SALDO_SPESA:' + d.substring(6) : '');
+}
+
 function eventTaskCategory_(description) {
   const d = eventNormalize_(description);
   if (/CONVOC|PRESENZ/.test(d)) return 'CONVOCAZIONI';
-  if (/HOTEL|ALLOGG|PAST|OSPITAL|GOMMONE|TRASPORT/.test(d)) return 'LOGISTICA';
-  if (/PAG|FATTUR|RIF|AFOR|RIMBORS/.test(d)) return 'AMMINISTRAZIONE';
+  if (/HOTEL|ALLOGG|PAST|OSPITAL|GOMMONE|TRASPORT|SOGGIORNO/.test(d)) return 'LOGISTICA';
+  if (/PAG|FATTUR|RIF|AFOR|RIMBORS|CONTABILE|SALDO/.test(d)) return 'AMMINISTRAZIONE';
   if (/CIRCOLO|ZONA|COMUNIC/.test(d)) return 'ORGANIZZAZIONE';
   return 'ALTRO';
 }
@@ -156,49 +174,49 @@ function eventSaveParticipants_(master,child,eventId) {
   const rows = [];
   const convTech = [];
   const aggTech = [];
-  const conv = local.getRange(3,1,40,16).getValues();
-  const agg = local.getRange(46,1,20,16).getValues();
+  const conv = local.getRange(3,1,15,19).getValues();
+  const agg = local.getRange(20,1,20,19).getValues();
 
   conv.forEach(r=>{
-    const parsed = eventParticipantRow_(r,'CONVOCATO',eventId,oldById,now);
+    const parsed = eventParticipantRowV7_(r,'CONVOCATO',eventId,oldById,now);
     if (!parsed) { convTech.push(['','','','','','']); return; }
     rows.push(parsed.backend);
     convTech.push(parsed.tech);
   });
   agg.forEach(r=>{
-    const parsed = eventParticipantRow_(r,'AGGREGATO',eventId,oldById,now);
+    const parsed = eventParticipantRowV7_(r,'AGGREGATO',eventId,oldById,now);
     if (!parsed) { aggTech.push(['','','','','','']); return; }
     rows.push(parsed.backend);
     aggTech.push(parsed.tech);
   });
 
   eventReplaceRowsForEvent_(backend,eventId,2,rows,17);
-  local.getRange(3,11,convTech.length,6).setValues(convTech);
-  local.getRange(46,11,aggTech.length,6).setValues(aggTech);
+  local.getRange(3,14,convTech.length,6).setValues(convTech);
+  local.getRange(20,14,aggTech.length,6).setValues(aggTech);
   return rows.length;
 }
 
-function eventParticipantRow_(r,type,eventId,oldById,now) {
+function eventParticipantRowV7_(r,type,eventId,oldById,now) {
   const name = String(r[0] || '').trim();
   const surname = String(r[1] || '').trim();
   if (!name && !surname) return null;
-  let id = String(r[10] || '').trim();
+  let id = String(r[13] || '').trim();
   const old = id && oldById[id] ? oldById[id] : null;
   if (!id) id = 'PAR-' + Utilities.getUuid();
-  const personId = String(r[11] || '').trim() || (old ? String(old[2] || '') : '');
-  const role = eventNormalize_(r[4]) || 'ATLETA';
-  let status = eventNormalize_(r[5]);
-  if (type === 'CONVOCATO' && !['DA FARE','MANDATA CONVOCAZIONE','CONFERMATO','ASSENTE'].includes(status)) status = 'DA FARE';
+  const personId = String(r[14] || '').trim() || (old ? String(old[2] || '') : '');
+  const role = eventNormalize_(r[7]) || 'ATLETA';
+  let status = eventNormalize_(r[8]);
+  if (type === 'CONVOCATO' && !['DA FARE','MANDATA CONVOCAZIONE','CONFERMATO','ASSENTE'].includes(status)) status = role === 'TECNICO' ? 'CONFERMATO' : 'DA FARE';
   if (type === 'AGGREGATO' && !['DA AUTORIZZARE','AUTORIZZATO','NON AUTORIZZATO'].includes(status)) status = 'DA AUTORIZZARE';
-  const provenance = String(r[13] || '').trim() || (old ? String(old[9] || '') : '') || 'SCHEDA EVENTO';
-  const sourceFile = String(r[14] || '').trim() || (old ? String(old[10] || '') : '');
-  const createdAt = r[15] instanceof Date ? r[15] : (old && old[12] instanceof Date ? old[12] : now);
-  const maxRefund = type === 'CONVOCATO' && r[6] !== '' ? Number(r[6] || 0) : '';
-  const passed = type === 'CONVOCATO' && r[7] !== '' ? Number(r[7] || 0) : '';
-  const passedDate = passed > 0 ? (r[8] instanceof Date ? r[8] : (old && old[16] instanceof Date ? old[16] : now)) : '';
-  const notes = String(type === 'CONVOCATO' ? r[9] : r[6] || '').trim();
+  const provenance = String(r[16] || '').trim() || (old ? String(old[9] || '') : '') || 'SCHEDA EVENTO';
+  const sourceFile = String(r[17] || '').trim() || (old ? String(old[10] || '') : '');
+  const createdAt = r[18] instanceof Date ? r[18] : (old && old[12] instanceof Date ? old[12] : now);
+  const maxRefund = type === 'CONVOCATO' && r[9] !== '' && role !== 'TECNICO' ? Number(r[9] || 0) : '';
+  const passed = type === 'CONVOCATO' && r[10] !== '' && role !== 'TECNICO' ? Number(r[10] || 0) : '';
+  const passedDate = passed > 0 ? (r[11] instanceof Date ? r[11] : (old && old[16] instanceof Date ? old[16] : now)) : '';
+  const notes = String(type === 'CONVOCATO' ? r[12] : r[9] || '').trim();
   const backend = [
-    id,eventId,personId,name,surname,String(r[2] || '').trim(),role,String(r[3] || '').trim(),maxRefund,
+    id,eventId,personId,name,surname,String(r[2] || '').trim(),role,String(r[6] || '').trim(),maxRefund,
     provenance,sourceFile,notes,createdAt,type,status,passed,passedDate
   ];
   return {backend:backend,tech:[id,personId,eventId,provenance,sourceFile,createdAt]};
@@ -207,6 +225,9 @@ function eventParticipantRow_(r,type,eventId,oldById,now) {
 function eventSaveExpenses_(master,child,eventId,meta) {
   const local = child.getSheetByName(EVENT_APP.SHEETS.EXPENSES);
   if (!local) throw new Error('Foglio Spese non trovato nella Scheda evento.');
+  eventApplyCommitmentV7_(meta);
+  eventSyncExpenseTasksV7_();
+
   const backend = eventMasterSheet_(master,'_SPESE');
   const oldRows = backend.getDataRange().getValues();
   const oldById = {};
@@ -214,66 +235,74 @@ function eventSaveExpenses_(master,child,eventId,meta) {
     if (String(oldRows[i][1] || '') === String(eventId) && oldRows[i][0]) oldById[String(oldRows[i][0])] = oldRows[i];
   }
 
-  const values = local.getRange(13,1,488,16).getValues();
+  const values = local.getRange(13,1,488,22).getValues();
   const now = new Date();
   const rows = [];
   values.forEach((r,index)=>{
-    const idInput = String(r[10] || '').trim();
-    if (idInput.indexOf('RIMBORSO-AUTO-') === 0) return;
-    const amount = Number(r[0] || 0);
+    const budget = Number(r[0] || 0);
     const description = String(r[1] || '').trim();
-    const hasData = amount || description || String(r[2] || '').trim() || String(r[3] || '').trim() || String(r[4] || '').trim();
+    const hasData = budget || description || String(r[2] || '').trim() || String(r[3] || '').trim();
     if (!hasData) return;
+    if (!(budget > 0)) throw new Error('Preventivo mancante nella riga ' + (13+index) + ' del foglio Spese.');
     if (!description) throw new Error('Descrizione mancante nella riga ' + (13+index) + ' del foglio Spese.');
 
+    const p1 = eventPaymentTypeV7_(r[4]);
+    const p2 = eventPaymentTypeV7_(r[7]);
+    const a1 = Number(r[5] || 0);
+    const a2 = Number(r[8] || 0);
+    const actual = a1 + a2;
+    if (actual > budget + 0.005) throw new Error('Pagamenti superiori al preventivo nella riga ' + (13+index) + '.');
+    const residual = Math.max(budget - actual,0);
+    const idInput = String(r[16] || '').trim();
     const id = idInput || 'SPESA-' + Utilities.getUuid();
     const old = oldById[id] ? oldById[id].slice(0,26) : new Array(26).fill('');
-    const category = eventExpenseCategory_(r[2],description);
-    const movement = eventExpenseMovement_(r[4]);
-    const paid = eventNormalize_(r[5]) === 'PAGATO' && movement !== 'PREVENTIVO';
-    const budget = movement === 'PREVENTIVO' ? amount : 0;
-    const actual = movement === 'PREVENTIVO' ? 0 : amount;
-    const rifCode = String(r[6] || '').trim();
-    const notes = '[MOVIMENTO=' + movement + ']' + (String(r[9] || '').trim() ? ' ' + String(r[9] || '').trim() : '');
-    const createdAt = r[14] instanceof Date ? r[14] : (old[16] instanceof Date ? old[16] : now);
-    const paidDate = paid ? (r[13] instanceof Date ? r[13] : (old[12] instanceof Date ? old[12] : now)) : '';
-    const status = eventExpenseBackendStatus_(movement,paid);
-    const rifNeeded = Math.max(budget,actual) > 1000;
+    const category = eventExpenseCategoryV7_(r[2],description);
+    const latestDate = eventLatestDateV7_(r[6],r[9]);
+    const due = residual > 0 && r[11] instanceof Date ? r[11] : '';
+    const status = eventExpenseStatusV7_(p1,p2,actual,residual);
+    const rifCode = String(r[12] || '').trim();
+    const createdAt = r[19] instanceof Date ? r[19] : (old[16] instanceof Date ? old[16] : now);
+    const invoiceDate = p2 === 'SALDO FATTURA' && r[9] instanceof Date ? r[9] : (p1 === 'SALDO FATTURA' && r[6] instanceof Date ? r[6] : '');
+    const paymentNotes = eventExpensePaymentNotesV7_(p1,a1,r[6],p2,a2,r[9]);
+    const noteText = [paymentNotes,String(r[15]||'').trim()].filter(Boolean).join(' ');
+
     let rifStatus = old[18] || '';
     if (rifCode) rifStatus = 'RICEVUTO';
-    else if (!rifNeeded) rifStatus = 'NON NECESSARIO';
+    else if (budget <= 1000) rifStatus = 'NON NECESSARIO';
     else if (!rifStatus || eventNormalize_(rifStatus) === 'NON NECESSARIO') rifStatus = 'DA RICHIEDERE';
-    const invoiceReceived = movement === 'FATTURA';
-    const closed = paid && ['FATTURA','CARTA DI CREDITO','ALTRO PAGAMENTO'].includes(movement);
 
     old[0]=id; old[1]=eventId; old[2]='SPESA'; old[3]=category;
-    old[4]=eventResolveCeb_(master,meta,category,String(r[11] || '').trim() || old[4]);
-    old[5]=description; old[6]=String(r[3] || '').trim(); old[7]=String(r[12] || '').trim();
-    old[8]=budget; old[9]=actual; old[10]=''; old[11]=status; old[12]=paidDate; old[13]='';
-    old[14]=String(r[8] || '').trim(); old[15]=notes; old[16]=createdAt; old[17]=now;
-    old[18]=rifStatus; old[20]=rifCode; old[21]=invoiceReceived;
-    old[22]=invoiceReceived ? (old[22] || now) : ''; old[25]=closed ? (old[25] || now) : '';
+    old[4]=eventResolveCeb_(master,meta,category,String(r[17] || '').trim() || old[4]);
+    old[5]=description; old[6]=String(r[3] || '').trim(); old[7]=String(r[18] || '').trim();
+    old[8]=budget; old[9]=actual; old[10]=due; old[11]=status; old[12]=latestDate; old[13]=old[13] || '';
+    old[14]=String(r[14] || '').trim(); old[15]=noteText; old[16]=createdAt; old[17]=now;
+    old[18]=rifStatus; old[20]=rifCode; old[21]=!!invoiceDate; old[22]=invoiceDate || old[22] || '';
+    if (residual <= 0 && actual > 0) old[25]=old[25] || now; else old[25]='';
     rows.push(old);
-    if (!idInput) local.getRange(13+index,11).setValue(id);
-    if (!String(r[11] || '').trim() && old[4]) local.getRange(13+index,12).setValue(old[4]);
+
+    if (!idInput) local.getRange(13+index,17).setValue(id);
+    if (!String(r[17] || '').trim() && old[4]) local.getRange(13+index,18).setValue(old[4]);
+    local.getRange(13+index,20).setValue(createdAt);
+    local.getRange(13+index,21).setValue(now);
   });
 
   const participants = child.getSheetByName(EVENT_APP.SHEETS.PARTICIPANTS);
   if (participants) {
-    const pRows = participants.getRange(3,1,40,16).getValues();
+    const pRows = participants.getRange(3,1,15,19).getValues();
     pRows.forEach((p,index)=>{
       const name = String(p[0] || '').trim();
       const surname = String(p[1] || '').trim();
-      const passed = Number(p[7] || 0);
-      if ((!name && !surname) || !(passed > 0)) return;
-      const participantId = String(p[10] || '').trim() || ('ROW-' + (index+3));
+      const role = eventNormalize_(p[7]);
+      const passed = Number(p[10] || 0);
+      if (role === 'TECNICO' || ((!name && !surname) || !(passed > 0))) return;
+      const participantId = String(p[13] || '').trim() || ('ROW-' + (index+3));
       const id = 'RIMBORSO-AUTO-' + participantId;
       const old = oldById[id] ? oldById[id].slice(0,26) : new Array(26).fill('');
       const beneficiary = [name,surname].filter(Boolean).join(' ');
       old[0]=id; old[1]=eventId; old[2]='RIMBORSO'; old[3]='RIMBORSO'; old[4]='CEB.002';
-      old[5]='Rimborso ' + beneficiary; old[6]=beneficiary; old[7]=String(p[11] || '').trim();
-      old[8]=0; old[9]=passed; old[10]=''; old[11]='RIMBORSATO'; old[12]=p[8] instanceof Date ? p[8] : now;
-      old[13]=''; old[14]=''; old[15]='[MOVIMENTO=RIMBORSO] [AUTO_RIMBORSO=' + participantId + ']' + (String(p[9] || '').trim() ? ' ' + String(p[9] || '').trim() : '');
+      old[5]='Rimborso ' + beneficiary; old[6]=beneficiary; old[7]=String(p[14] || '').trim();
+      old[8]=0; old[9]=passed; old[10]=''; old[11]='RIMBORSATO'; old[12]=p[11] instanceof Date ? p[11] : now;
+      old[13]=''; old[14]=''; old[15]='[MOVIMENTO=RIMBORSO] [AUTO_RIMBORSO=' + participantId + ']' + (String(p[12] || '').trim() ? ' ' + String(p[12] || '').trim() : '');
       old[16]=old[16] || now; old[17]=now; old[18]='NON NECESSARIO'; old[20]=''; old[21]=false; old[25]=old[25] || now;
       rows.push(old);
     });
@@ -284,7 +313,30 @@ function eventSaveExpenses_(master,child,eventId,meta) {
   return rows.length;
 }
 
-function eventExpenseCategory_(category,description) {
+function eventLatestDateV7_(a,b) {
+  const dates = [a,b].filter(x=>x instanceof Date && !isNaN(x));
+  if (!dates.length) return '';
+  return new Date(Math.max.apply(null,dates.map(x=>x.getTime())));
+}
+
+function eventExpensePaymentNotesV7_(p1,a1,d1,p2,a2,d2) {
+  const tz = Session.getScriptTimeZone() || 'Europe/Rome';
+  const parts = [];
+  if (p1 || a1) parts.push('[P1=' + (p1||'') + ';IMPORTO=' + (a1||0) + ';DATA=' + (d1 instanceof Date ? Utilities.formatDate(d1,tz,'dd/MM/yyyy') : '') + ']');
+  if (p2 || a2) parts.push('[P2=' + (p2||'') + ';IMPORTO=' + (a2||0) + ';DATA=' + (d2 instanceof Date ? Utilities.formatDate(d2,tz,'dd/MM/yyyy') : '') + ']');
+  return parts.join(' ');
+}
+
+function eventExpenseStatusV7_(p1,p2,actual,residual) {
+  if (!(actual > 0)) return 'DA PAGARE';
+  if (residual > 0) return 'PARZIALMENTE PAGATO';
+  if (p2 === 'SALDO FATTURA' || p1 === 'SALDO FATTURA') return 'PAGATO - FATTURA';
+  if (p2 === 'CARTA DI CREDITO' || p1 === 'CARTA DI CREDITO') return 'PAGATO CON CC';
+  if ((p1 === 'AFOR' || !p1) && (p2 === 'AFOR' || !p2)) return 'PAGATO - AFOR';
+  return 'PAGATO';
+}
+
+function eventExpenseCategoryV7_(category,description) {
   let c = eventNormalize_(category);
   const d = eventNormalize_(description);
   if (c === 'VITTO / ALLOGGIO') {
@@ -293,21 +345,6 @@ function eventExpenseCategory_(category,description) {
   }
   if (c === 'VIAGGIO') c = 'VIAGGI';
   return c || 'ALTRO';
-}
-
-function eventExpenseMovement_(movement) {
-  const m = eventNormalize_(movement || 'PREVENTIVO');
-  if (m === 'CARTA') return 'CARTA DI CREDITO';
-  return ['PREVENTIVO','AFOR','FATTURA','CARTA DI CREDITO','ALTRO PAGAMENTO'].includes(m) ? m : 'PREVENTIVO';
-}
-
-function eventExpenseBackendStatus_(movement,paid) {
-  if (movement === 'PREVENTIVO') return 'DA DEFINIRE';
-  if (!paid) return 'DA PAGARE';
-  if (movement === 'AFOR') return 'PAGATO - AFOR';
-  if (movement === 'FATTURA') return 'PAGATO - FATTURA';
-  if (movement === 'CARTA DI CREDITO') return 'PAGATO CON CC';
-  return 'PAGATO';
 }
 
 function eventResolveCeb_(master,meta,category,current) {
