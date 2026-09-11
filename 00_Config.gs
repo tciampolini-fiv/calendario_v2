@@ -3,6 +3,7 @@ const APP = Object.freeze({
   TZ: 'Europe/Rome',
   SHEETS: Object.freeze({
     CALENDAR: 'Calendario',
+    OBJECTIVES: '_OBIETTIVI',
     CHECKLIST: '_CHECKLIST',
     EXPENSES: '_SPESE',
     PARTICIPANTS: '_PARTECIPANTI',
@@ -31,8 +32,8 @@ const APP = Object.freeze({
     TECHNICIANS: 'TECNICI',
     LODGING: 'ALLOGGIO / STRUTTURA',
     COMMITMENT: 'IMPEGNO',
-    CHECKLIST: 'CHECKLIST',
-    NEXT_ACTION: "NOTE ATTIVITA'",
+    CHECKLIST: 'AVANZAMENTO',
+    NEXT_ACTION: 'DA FARE ORA',
     BUDGET: 'PREVENTIVO',
     ACTUAL: 'CONSUNTIVO',
     TO_PAY: 'DA SALDARE',
