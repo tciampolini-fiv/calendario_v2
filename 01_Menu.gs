@@ -1,10 +1,10 @@
 function onOpen() {
   SpreadsheetApp.getUi()
     .createMenu('Calendario v2')
-    .addItem('Crea / aggiorna scheda ← Calendario', 'prepareEventSheetForSelectedEventV2')
+    .addItem('Crea / aggiorna scheda ← Calendario', 'prepareEventSheetForSelectedEventV13')
     .addSeparator()
-    .addItem('↻ Aggiorna scheda selezionata', 'syncSelectedEventSheetToCalendarV2')
-    .addItem('↻ Aggiorna tutte le schede modificate', 'syncChangedEventSheetsV12')
+    .addItem('↻ Aggiorna scheda selezionata', 'syncSelectedEventSheetToCalendarV13')
+    .addItem('↻ Aggiorna tutte le schede V13', 'syncAllEventSheetsToCalendarV13')
     .addSeparator()
     .addItem('Crea cartella di lavoro', 'createWorkFolderForSelectedEvent')
     .addItem('Genera documenti evento', 'generateDocumentsForSelectedEvent')
