@@ -1,256 +1,137 @@
 const CHECKLIST_DEPENDENCY_DELAY_DAYS = 2;
+const OBJECTIVE_DEFAULT_DUE_DAYS = -5;
 
 function getChecklistRowsForEventRaw_(eventId) {
   const rows = sh_(APP.SHEETS.CHECKLIST).getDataRange().getValues();
   return rows.slice(1).filter(r => String(r[1]) === String(eventId)).map(r => ({
-    id: r[0], eventId: r[1], order: r[2], task: r[3], category: r[4], dueDate: r[5], status: r[6],
-    priority: r[7], source: r[8], autoKey: r[9], note: r[10], completedAt: r[11], updatedAt: r[12]
+    id:r[0], eventId:r[1], objectiveId:r[2], order:r[3], task:r[4], dueDate:r[5], status:r[6],
+    note:r[7], source:r[8], autoKey:r[9], completedAt:r[10], updatedAt:r[11], autoDue:r[12] === true,
+    previousTaskId:r[13]
   }));
 }
 
-/**
- * Restituisce l'intero quadro dell'evento: attività da fare, in attesa e fatte.
- * Le vecchie BLOCCATA sono trattate come IN ATTESA per compatibilità storica.
- */
-function getChecklistForEvent_(eventId) {
-  syncChecklistLocksForEvent_(eventId);
-  return getChecklistRowsForEventRaw_(eventId)
-    .map(x => {
-      if (normalize_(x.status) === 'BLOCCATA') x.status = 'IN ATTESA';
-      return x;
-    })
-    .sort((a, b) => {
-      const rank = { 'DA FARE': 1, 'IN ATTESA': 2, 'FATTO': 3, 'COMPLETATA': 3 };
-      const aRank = rank[normalize_(a.status)] || 9;
-      const bRank = rank[normalize_(b.status)] || 9;
-      if (aRank !== bRank) return aRank - bRank;
-      const aDue = a.dueDate instanceof Date ? a.dueDate.getTime() : Number.POSITIVE_INFINITY;
-      const bDue = b.dueDate instanceof Date ? b.dueDate.getTime() : Number.POSITIVE_INFINITY;
-      if (aDue !== bDue) return aDue - bDue;
-      return Number(a.order || 0) - Number(b.order || 0);
-    });
-}
-
-function getChecklistProfileForEvent_(event) {
-  const type = normalize_(event[APP.CALENDAR_HEADERS.TYPE]);
-  const rows = sh_(APP.SHEETS.EVENT_TYPE_CONFIG).getDataRange().getValues();
-  for (let i = 1; i < rows.length; i++) {
-    if (normalize_(rows[i][0]) === type) return normalize_(rows[i][3]) || type;
-  }
-  return type;
-}
-
-function getChecklistRulesForEvent_(event) {
-  const config = sh_(APP.SHEETS.CHECKLIST_CONFIG).getDataRange().getValues();
-  const profile = getChecklistProfileForEvent_(event);
-  const cls = normalize_(event[APP.CALENDAR_HEADERS.CLASS]);
-  const rules = {};
-
-  config.slice(1).forEach(r => {
-    const cfgProfile = normalize_(r[1]);
-    const cfgClass = normalize_(r[2]);
-    const active = r[10] === true || normalize_(r[10]) === 'SI';
-    if (!active || (cfgProfile !== profile && cfgProfile !== 'TUTTI')) return;
-    if (cfgClass && cfgClass !== '*' && cfgClass !== cls) return;
-    const key = normalize_(r[9] || r[3]);
-    if (!key) return;
-    rules[key] = { dependsOn: normalize_(r[12] || ''), unlockDateBase: normalize_(r[13] || '') };
-  });
-  return rules;
-}
-
-function eventHasEnded_(event, today) {
-  const end = event && event[APP.CALENDAR_HEADERS.END];
-  if (!(end instanceof Date)) return false;
-  const endDay = new Date(end);
-  endDay.setHours(0, 0, 0, 0);
-  const day = today instanceof Date ? new Date(today) : new Date();
-  day.setHours(0, 0, 0, 0);
-  return day > endDay;
-}
-
-function taskDueReached_(value, today) {
-  if (!(value instanceof Date)) return false;
-  const due = new Date(value);
-  due.setHours(0, 0, 0, 0);
-  const day = today instanceof Date ? new Date(today) : new Date();
-  day.setHours(0, 0, 0, 0);
-  return due.getTime() <= day.getTime();
-}
-
-function dependentTaskDueDate_(previous, today) {
-  if (!previous) return '';
-  let base = previous.values[11] instanceof Date ? previous.values[11] : null;
-  if (!base && previous.values[12] instanceof Date) base = previous.values[12];
-  if (!base) base = today instanceof Date ? today : new Date();
-  const due = new Date(base);
-  due.setHours(12, 0, 0, 0);
-  due.setDate(due.getDate() + CHECKLIST_DEPENDENCY_DELAY_DAYS);
-  return due;
-}
-
-function sameCalendarDay_(a, b) {
-  if (!(a instanceof Date) || !(b instanceof Date)) return false;
-  return a.getFullYear() === b.getFullYear() &&
-    a.getMonth() === b.getMonth() &&
-    a.getDate() === b.getDate();
-}
-
-/**
- * Gestisce le attività STANDARD e AUTO senza nasconderle mai.
- *
- * - attività iniziali: DA FARE;
- * - attività dipendenti: IN ATTESA finché la task madre non è FATTO;
- * - quando la task madre diventa FATTO, la scadenza della figlia viene fissata a +2 giorni;
- * - la figlia diventa DA FARE solo quando la sua scadenza è arrivata;
- * - Conferma presenze tutti atleti conserva la scadenza inserita dalla convocazione;
- * - attività legate alla fine evento restano IN ATTESA fino alla propria scadenza;
- * - fattura dopo AFOR resta IN ATTESA fino alla propria scadenza.
- */
-function syncChecklistLocksForEvent_(eventId) {
-  const found = findCalendarEventById_(eventId);
-  if (!found) return;
-  const event = found.event;
-  const rules = getChecklistRulesForEvent_(event);
-  const sheet = sh_(APP.SHEETS.CHECKLIST);
+function getObjectivesForEvent_(eventId) {
+  const sheet = sh_(APP.SHEETS.OBJECTIVES);
   const rows = sheet.getDataRange().getValues();
-  const eventRows = [];
-  const byKey = {};
-
-  for (let i = 1; i < rows.length; i++) {
-    if (String(rows[i][1]) !== String(eventId)) continue;
-    const item = { row: i + 1, values: rows[i], key: normalize_(rows[i][9] || rows[i][3]), source: normalize_(rows[i][8]) };
-    eventRows.push(item);
-    if (item.key) byKey[item.key] = item;
-  }
-
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const statusUpdates = [];
-  const dueUpdates = [];
-
-  eventRows.forEach(item => {
-    let current = normalize_(item.values[6]);
-    if (current === 'FATTO' || current === 'COMPLETATA') return;
-    if (current === 'BLOCCATA') current = 'IN ATTESA';
-
-    let managed = false;
-    let desired = current || 'DA FARE';
-
-    if (item.source === 'STANDARD') {
-      managed = true;
-      const rule = rules[item.key] || {};
-
-      if (rule.dependsOn) {
-        const previous = byKey[rule.dependsOn];
-        const previousStatus = previous ? normalize_(previous.values[6]) : '';
-        const previousDone = previousStatus === 'FATTO' || previousStatus === 'COMPLETATA';
-        const isPresenceCheck = item.key === 'CHECK_CONFERME';
-
-        if (!previousDone) {
-          desired = 'IN ATTESA';
-          if (!isPresenceCheck && item.values[5] instanceof Date) {
-            dueUpdates.push({row:item.row, due:''});
-            item.values[5] = '';
-          }
-        } else {
-          if (!isPresenceCheck) {
-            const due = dependentTaskDueDate_(previous, today);
-            if (!(item.values[5] instanceof Date) || !sameCalendarDay_(item.values[5], due)) {
-              dueUpdates.push({row:item.row, due:due});
-              item.values[5] = due;
-            }
-          }
-          desired = taskDueReached_(item.values[5], today) ? 'DA FARE' : 'IN ATTESA';
-        }
-      } else if (rule.unlockDateBase === 'FINE') {
-        desired = taskDueReached_(item.values[5], today) ? 'DA FARE' : 'IN ATTESA';
-      } else {
-        desired = 'DA FARE';
-      }
-    } else if (item.source === 'AUTO' && item.key.indexOf('FATTURA_AFOR:') === 0) {
-      managed = true;
-      desired = taskDueReached_(item.values[5], today) ? 'DA FARE' : 'IN ATTESA';
+  const tasks = getChecklistRowsForEventRaw_(eventId);
+  const byObjective = {};
+  tasks.forEach(t => { if (!byObjective[t.objectiveId]) byObjective[t.objectiveId] = []; byObjective[t.objectiveId].push(t); });
+  return rows.slice(1).filter(r => String(r[1]) === String(eventId)).map(r => {
+    const list = (byObjective[r[0]] || []).sort((a,b)=>Number(a.order||0)-Number(b.order||0));
+    const done = list.filter(t=>normalize_(t.status)==='FATTO').length;
+    const total = list.length;
+    let state = total && done === total ? 'COMPLETATO' : (done ? 'IN CORSO' : 'DA AVVIARE');
+    const due = r[4];
+    if (state !== 'COMPLETATO' && due instanceof Date) {
+      const d = new Date(due); d.setHours(0,0,0,0); const today = new Date(); today.setHours(0,0,0,0);
+      if (d < today) state = 'IN RITARDO';
     }
-
-    if (!managed) return;
-    if (normalize_(item.values[6]) !== desired) statusUpdates.push({ row: item.row, status: desired });
-  });
-
-  dueUpdates.forEach(u => {
-    const cell = sheet.getRange(u.row, 6);
-    if (u.due instanceof Date) cell.setValue(u.due).setNumberFormat('dd/MM/yyyy');
-    else cell.clearContent();
-    sheet.getRange(u.row, 13).setValue(new Date());
-  });
-  statusUpdates.forEach(u => {
-    sheet.getRange(u.row, 7).setValue(u.status);
-    sheet.getRange(u.row, 13).setValue(new Date());
-  });
-  if (dueUpdates.length || statusUpdates.length) SpreadsheetApp.flush();
+    return {id:r[0], eventId:r[1], name:r[2], color:r[3], dueDate:r[4], order:r[5], source:r[6], templateKey:r[7], notes:r[8], createdAt:r[9], updatedAt:r[10], status:state, done:done, total:total, tasks:list};
+  }).sort((a,b)=>Number(a.order||0)-Number(b.order||0));
 }
 
-function syncAllChecklistLocks_() {
-  const rows = sh_(APP.SHEETS.CHECKLIST).getDataRange().getValues();
-  const ids = new Set();
-  for (let i = 1; i < rows.length; i++) {
-    const source = normalize_(rows[i][8]);
-    const status = normalize_(rows[i][6]);
-    if (!rows[i][1] || status === 'FATTO' || status === 'COMPLETATA') continue;
-    if (source === 'STANDARD' || (source === 'AUTO' && normalize_(rows[i][9]).indexOf('FATTURA_AFOR:') === 0)) ids.add(String(rows[i][1]));
+function objectivePalette_(){return ['#D9EAF7','#FCE8B2','#EADCF8','#D9EAD3','#F4CCCC','#D0E0E3','#FCE5CD','#D9D2E9','#CFE2F3','#E2F0D9'];}
+function objectiveColorForIndex_(index){const p=objectivePalette_();return p[Math.max(0,index)%p.length];}
+function objectiveDueDate_(event){const start=event && event[APP.CALENDAR_HEADERS.START];if(!(start instanceof Date))return'';const d=new Date(start);d.setDate(d.getDate()+OBJECTIVE_DEFAULT_DUE_DAYS);return d;}
+function objectiveKeyFromTask_(task,autoKey,category){
+  const k=normalize_(autoKey||task), t=normalize_(task), c=normalize_(category);
+  if(k.indexOf('GOMMONE')>=0||t.indexOf('GOMMONE')>=0)return'GOMMONE';
+  if(k.indexOf('SOGGIORNO')>=0||t.indexOf('HOTEL')>=0||t.indexOf('SOGGIORNO')>=0||t.indexOf('ALLOGGIO')>=0)return'SOGGIORNO';
+  if(k.indexOf('PASTI')>=0||t.indexOf('PASTI')>=0)return'PASTI';
+  if(k.indexOf('OSPITALITA')>=0||t.indexOf('OSPITALITA')>=0||t.indexOf('CIRCOLO')>=0||k.indexOf('RINGRAZIAMENTO')>=0)return'OSPITALITA CIRCOLO';
+  if(k.indexOf('CONV_ATLETI')>=0||k==='CHECK_CONFERME'||t.indexOf('CONVOCAZIONE ATLETI')>=0||t.indexOf('PRESENZE')>=0)return'CONVOCAZIONE ATLETI';
+  if(k.indexOf('CONV_TECNICO')>=0||t.indexOf('CONVOCAZIONE TECNICO')>=0)return'CONVOCAZIONE TECNICO';
+  if(k.indexOf('VIAGGIO_TECNICO')>=0||t.indexOf('VIAGGIO TECNICO')>=0)return'VIAGGIO TECNICO';
+  if(t.indexOf('NAVE')>=0||t.indexOf('CARRELLO')>=0||t.indexOf('MEZZ')>=0)return'TRASPORTO / MEZZI';
+  if(c==='AMMINISTRAZIONE')return'AMMINISTRAZIONE';
+  return'ALTRO';
+}
+function objectiveDisplayName_(key,task,note){
+  if(key==='VIAGGIO TECNICO'){
+    const text=(String(task||'')+' '+String(note||'')).trim();
+    const people=technicianDirectory_();
+    for(let i=0;i<people.length;i++)if(normalize_(text).indexOf(people[i][0])>=0)return'Viaggio tecnico – '+people[i][1]+' '+people[i][2];
   }
-  ids.forEach(syncChecklistLocksForEvent_);
+  const names={'GOMMONE':'Gommone','SOGGIORNO':'Soggiorno','PASTI':'Pasti','OSPITALITA CIRCOLO':'Ospitalità Circolo','CONVOCAZIONE ATLETI':'Convocazione atleti','CONVOCAZIONE TECNICO':'Convocazione tecnico','VIAGGIO TECNICO':'Viaggio tecnico','TRASPORTO / MEZZI':'Trasporto / Mezzi','AMMINISTRAZIONE':'Amministrazione','ALTRO':'Altro'};
+  return names[key]||key;
 }
 
-function generateChecklistForEvent_(eventId, event) {
-  const profile = getChecklistProfileForEvent_(event);
-  if (!profile || profile === 'NESSUNO') return 0;
-
-  const target = sh_(APP.SHEETS.CHECKLIST);
-  const existing = getChecklistRowsForEventRaw_(eventId);
-  const existingKeys = new Set(existing.map(x => normalize_(x.autoKey || x.task)));
-  const config = sh_(APP.SHEETS.CHECKLIST_CONFIG).getDataRange().getValues();
-  const cls = normalize_(event[APP.CALENDAR_HEADERS.CLASS]);
-  const start = event[APP.CALENDAR_HEADERS.START];
-  const end = event[APP.CALENDAR_HEADERS.END];
-  const now = new Date();
-  const appendRows = [];
-
-  config.slice(1).forEach((r, idx) => {
-    const cfgProfile = normalize_(r[1]);
-    const cfgClass = normalize_(r[2]);
-    const active = r[10] === true || normalize_(r[10]) === 'SI';
-    if (!active || (cfgProfile !== profile && cfgProfile !== 'TUTTI')) return;
-    if (cfgClass && cfgClass !== '*' && cfgClass !== cls) return;
-
-    const task = String(r[3] || '').trim();
-    const autoKey = String(r[9] || task).trim();
-    if (!task || existingKeys.has(normalize_(autoKey))) return;
-
-    const base = normalize_(r[5]);
-    const offsetDays = r[6] === '' ? null : Number(r[6] || 0);
-    let baseDate = base === 'FINE' ? end : start;
-    if (!(baseDate instanceof Date)) baseDate = null;
-    const due = baseDate && offsetDays !== null ? new Date(baseDate.getTime() + offsetDays * 86400000) : '';
-
-    appendRows.push([
-      'TASK-' + Utilities.getUuid(), eventId, Number(r[8] || (idx + 1) * 10), task,
-      r[4] || '', due, 'DA FARE', '', 'STANDARD', autoKey, r[11] || '', '', now
-    ]);
-    existingKeys.add(normalize_(autoKey));
+function migrateChecklistToObjectivesV13_(){
+  const cal=sh_(APP.SHEETS.CALENDAR), calRows=cal.getDataRange().getValues(), headers=calRows[0], idx={};headers.forEach((h,i)=>idx[String(h||'').trim()]=i);
+  const events={};for(let i=1;i<calRows.length;i++){const id=String(calRows[i][idx[APP.CALENDAR_HEADERS.ID]]||'').trim();if(!id)continue;const e={};headers.forEach((h,c)=>e[String(h||'').trim()]=calRows[i][c]);events[id]=e;}
+  const checklist=sh_(APP.SHEETS.CHECKLIST), rows=checklist.getDataRange().getValues();
+  if(normalize_(rows[0][2])==='ID OBIETTIVO')return {migrated:false};
+  const objSheet=sh_(APP.SHEETS.OBJECTIVES), now=new Date(), objectives=[], objectiveMap={}, taskRows=[];
+  rows.slice(1).forEach((r,index)=>{
+    const eventId=String(r[1]||'').trim();if(!eventId||!String(r[3]||'').trim())return;
+    const key=objectiveKeyFromTask_(r[3],r[9],r[4]);const display=objectiveDisplayName_(key,r[3],r[10]);const mapKey=eventId+'|'+normalize_(display);
+    let obj=objectiveMap[mapKey];
+    if(!obj){const sameEventCount=objectives.filter(x=>x[1]===eventId).length;obj=['OBJ-'+Utilities.getUuid(),eventId,display,objectiveColorForIndex_(sameEventCount),objectiveDueDate_(events[eventId]),(sameEventCount+1)*10,'MIGRATO',key,'',now,now];objectiveMap[mapKey]=obj;objectives.push(obj);}
+    const existingOrder=Number(r[13]||0)>0?Number(r[13]):Number(r[2]||0);taskRows.push([r[0]||'TASK-'+Utilities.getUuid(),eventId,obj[0],existingOrder||((index+1)*10),r[3]||'',r[5]||'',normalize_(r[6])==='COMPLETATA'?'FATTO':(r[6]||'IN ATTESA'),r[10]||'',r[8]||'MIGRATO',r[9]||'',r[11]||'',r[12]||now,false,r[14]||'']);
   });
-
-  if (appendRows.length) target.getRange(target.getLastRow() + 1, 1, appendRows.length, 13).setValues(appendRows);
-  syncChecklistLocksForEvent_(eventId);
-  return appendRows.length;
+  if(objSheet.getLastRow()>1)objSheet.getRange(2,1,objSheet.getLastRow()-1,11).clearContent();
+  if(objectives.length)objSheet.getRange(2,1,objectives.length,11).setValues(objectives);
+  checklist.clearContents();
+  checklist.getRange(1,1,1,14).setValues([['ID TASK','ID EVENTO','ID OBIETTIVO','ORDINE STEP','ATTIVITA','SCADENZA','STATO','NOTE','ORIGINE','AUTO KEY','DATA COMPLETAMENTO','ULTIMO AGGIORNAMENTO','SCADENZA AUTOMATICA','ID TASK PRECEDENTE']]);
+  if(taskRows.length)checklist.getRange(2,1,taskRows.length,14).setValues(taskRows);
+  Object.keys(events).forEach(syncChecklistLocksForEvent_);SpreadsheetApp.flush();return{migrated:true,objectives:objectives.length,tasks:taskRows.length};
 }
 
-function generateChecklistForSelectedEvent() {
-  const event = selectedEvent_();
-  const eventId = ensureEventId_(event);
-  const added = generateChecklistForEvent_(eventId, event);
-  getExpensesForEvent_(eventId).forEach(syncExpenseTasks_);
-  syncChecklistLocksForEvent_(eventId);
-  SpreadsheetApp.flush();
-  SpreadsheetApp.getUi().alert('Checklist evento', added ? 'Nuove attività create: ' + added : 'La checklist è già aggiornata.', SpreadsheetApp.getUi().ButtonSet.OK);
+function syncChecklistLocksForEvent_(eventId){
+  const sheet=sh_(APP.SHEETS.CHECKLIST),rows=sheet.getDataRange().getValues(),items=[];
+  for(let i=1;i<rows.length;i++)if(String(rows[i][1])===String(eventId))items.push({row:i+1,v:rows[i]});
+  const groups={};items.forEach(x=>{const id=String(x.v[2]||'');if(!groups[id])groups[id]=[];groups[id].push(x);});
+  const today=new Date();today.setHours(0,0,0,0);const now=new Date();
+  Object.keys(groups).forEach(id=>{
+    const list=groups[id].sort((a,b)=>Number(a.v[3]||0)-Number(b.v[3]||0));
+    for(let i=0;i<list.length;i++){
+      const item=list[i],status=normalize_(item.v[6]);if(status==='FATTO')continue;
+      const prev=i?list[i-1]:null;const prevDone=!prev||normalize_(prev.v[6])==='FATTO';let due=item.v[5];
+      if(prev&&prevDone&&!(due instanceof Date)){
+        const base=prev.v[10] instanceof Date?prev.v[10]:now;due=new Date(base);due.setHours(12,0,0,0);due.setDate(due.getDate()+CHECKLIST_DEPENDENCY_DELAY_DAYS);
+        sheet.getRange(item.row,6).setValue(due).setNumberFormat('dd/MM/yyyy');sheet.getRange(item.row,13).setValue(true);item.v[5]=due;
+      }
+      let desired='IN ATTESA';
+      if(prevDone){if(!(due instanceof Date))desired=i===0?'DA FARE':'IN ATTESA';else{const d=new Date(due);d.setHours(0,0,0,0);desired=d<=today?'DA FARE':'IN ATTESA';}}
+      if(status!==desired)sheet.getRange(item.row,7).setValue(desired);
+      const prevId=prev?String(prev.v[0]||''):'';if(String(item.v[13]||'')!==prevId)sheet.getRange(item.row,14).setValue(prevId);
+      sheet.getRange(item.row,12).setValue(now);
+    }
+  });
 }
+
+function getChecklistForEvent_(eventId){syncChecklistLocksForEvent_(eventId);return getChecklistRowsForEventRaw_(eventId).sort((a,b)=>Number(a.order||0)-Number(b.order||0));}
+function syncAllChecklistLocks_(){const rows=sh_(APP.SHEETS.CHECKLIST).getDataRange().getValues(),ids=new Set();for(let i=1;i<rows.length;i++)if(rows[i][1])ids.add(String(rows[i][1]));ids.forEach(syncChecklistLocksForEvent_);}
+
+function getChecklistProfileForEvent_(event){const type=normalize_(event[APP.CALENDAR_HEADERS.TYPE]),rows=sh_(APP.SHEETS.EVENT_TYPE_CONFIG).getDataRange().getValues();for(let i=1;i<rows.length;i++)if(normalize_(rows[i][0])===type)return normalize_(rows[i][3])||type;return type;}
+function getChecklistRulesForEvent_(){return {};}
+
+function standardObjectiveTemplatesForEvent_(event){
+  const type=normalize_(event[APP.CALENDAR_HEADERS.TYPE]);const international=type.indexOf('REGATA INT')>=0||type==='REGATA';
+  const base=international?-35:-14, stay=international?-30:-14, travel=international?-20:-10, conv=international?-15:-10, meals=international?-12:-7;
+  return [
+    {key:'GOMMONE',name:'Gommone',first:'Chiedere disponibilità',offset:base,steps:['Chiedere disponibilità','Ricevere conferma','Pagare AFOR','Inviare contabile']},
+    {key:'SOGGIORNO',name:'Soggiorno',first:'Chiedere disponibilità hotel',offset:stay,steps:['Chiedere disponibilità hotel','Ricevere risposta hotel','Confermare camere','Pagare anticipo']},
+    {key:'PASTI',name:'Pasti',first:'Definire soluzione pasti',offset:meals,steps:['Definire soluzione pasti','Ricevere conferma']},
+    {key:'VIAGGIO_TECNICO',name:'Viaggio tecnico',first:'Definire viaggio',offset:travel,steps:['Definire viaggio','Prenotare','Inviare biglietto']},
+    {key:'CONV_ATLETI',name:'Convocazione atleti',first:'Inviare convocazione',offset:conv,steps:['Inviare convocazione','Ricevere conferme']},
+    {key:'CONV_TECNICO',name:'Convocazione tecnico',first:'Inviare convocazione tecnico',offset:conv,steps:['Inviare convocazione tecnico']},
+    {key:'OSPITALITA_CIRCOLO',name:'Ospitalità Circolo',first:'Chiedere ospitalità',offset:base,steps:['Chiedere ospitalità','Ricevere conferma']}
+  ];
+}
+function addDays_(d,n){if(!(d instanceof Date))return'';const x=new Date(d);x.setDate(x.getDate()+Number(n||0));return x;}
+function generateChecklistForEvent_(eventId,event){
+  const profile=getChecklistProfileForEvent_(event);if(!profile||profile==='NESSUNO')return 0;
+  const objSheet=sh_(APP.SHEETS.OBJECTIVES), taskSheet=sh_(APP.SHEETS.CHECKLIST);const existing=getObjectivesForEvent_(eventId);if(existing.length)return 0;
+  const start=event[APP.CALENDAR_HEADERS.START],now=new Date(),templates=standardObjectiveTemplatesForEvent_(event),techs=resolveFullTechnicians_(event[APP.CALENDAR_HEADERS.TECHNICIANS]);
+  const expanded=[];templates.forEach(t=>{if(t.key==='VIAGGIO_TECNICO'&&techs.length){techs.forEach(p=>expanded.push(Object.assign({},t,{name:'Viaggio tecnico – '+p.name+' '+p.surname,templateKey:t.key+':'+normalize_(p.surname)})));}else expanded.push(Object.assign({},t,{templateKey:t.key}));});
+  const objRows=[],taskRows=[];expanded.forEach((t,i)=>{const oid='OBJ-'+Utilities.getUuid();objRows.push([oid,eventId,t.name,objectiveColorForIndex_(i),objectiveDueDate_(event),(i+1)*10,'STANDARD',t.templateKey,'',now,now]);t.steps.forEach((step,j)=>taskRows.push(['TASK-'+Utilities.getUuid(),eventId,oid,(j+1)*10,step,j===0?addDays_(start,t.offset):'',j===0&&addDays_(start,t.offset) instanceof Date&&addDays_(start,t.offset)<=now?'DA FARE':'IN ATTESA','', 'STANDARD',t.key+(j?':'+(j+1):''),'',now,false,'']));});
+  if(objRows.length)objSheet.getRange(objSheet.getLastRow()+1,1,objRows.length,11).setValues(objRows);if(taskRows.length)taskSheet.getRange(taskSheet.getLastRow()+1,1,taskRows.length,14).setValues(taskRows);syncChecklistLocksForEvent_(eventId);return taskRows.length;
+}
+function generateChecklistForSelectedEvent(){const event=selectedEvent_(),eventId=ensureEventId_(event),added=generateChecklistForEvent_(eventId,event);SpreadsheetApp.getUi().alert('Attività evento',added?'Nuove attività create: '+added:'Gli obiettivi sono già presenti.',SpreadsheetApp.getUi().ButtonSet.OK);}
+
+function calendarObjectiveProgressText_(eventId){
+  const objs=getObjectivesForEvent_(eventId);if(!objs.length)return'';
+  return objs.map(o=>{const mark=o.status==='COMPLETATO'?'✓':o.status==='IN RITARDO'?'⚠':'•';const boxes=o.tasks.map(t=>normalize_(t.status)==='FATTO'?'☑':'☐').join('');return mark+' '+o.name+'  '+boxes;}).join('\n');
+}
+function calendarTasksNowText_(eventId){syncChecklistLocksForEvent_(eventId);const objs=getObjectivesForEvent_(eventId),names={};objs.forEach(o=>names[o.id]=o.name);return getChecklistRowsForEventRaw_(eventId).filter(t=>normalize_(t.status)==='DA FARE').sort((a,b)=>Number(a.order||0)-Number(b.order||0)).map(t=>(names[t.objectiveId]?names[t.objectiveId]+' — ':'')+t.task).join('\n');}
