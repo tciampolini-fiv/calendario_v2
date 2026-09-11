@@ -138,7 +138,6 @@ function eventNormalizePaymentInputRowV8_(sheet,row) {
   const amountCell=sheet.getRange(row,c.amount);let amount=Number(amountCell.getValue()||0);
   const paid=sheet.getRange(row,c.paid).getValue()===true,dateCell=sheet.getRange(row,c.paymentDate),paymentDate=dateCell.getValue();
 
-  // Carta di credito / saldo fattura: propone il residuo, senza marcare il pagamento come effettuato.
   if((type==='CARTA DI CREDITO'||type==='SALDO FATTURA')&&!(amount>0)){
     const quote=quoteNo>0?eventFindQuoteByNumberV10_(sheet,quoteNo):null;
     const budget=quote?quote.amount:Number(sheet.getRange('C9').getValue()||0);
@@ -170,12 +169,6 @@ function eventAllocatedInputAmountV10_(sheet,excludeRow,quoteNo) {
 function eventHistoryRowsV11_(sheet,width){
   const count=Math.max(0,sheet.getMaxRows()-EXPENSES_V8.HISTORY_START_ROW+1);
   return count?sheet.getRange(EXPENSES_V8.HISTORY_START_ROW,1,count,width||EXPENSES_V8.HISTORY_COLS).getValues():[];
-}
-
-function eventPaidHistoryForQuoteV10_(sheet,quoteNo){
-  let total=0;
-  eventHistoryRowsV11_(sheet,7).forEach(r=>{if(Number(r[0]||0)===quoteNo&&eventNormalizeTextV7_(r[1])!=='PREVENTIVO'&&eventNormalizeTextV7_(r[4])==='PAGATO')total+=Number(r[2]||0);});
-  return total;
 }
 
 function eventPaymentTypeV8_(value) {
@@ -378,7 +371,7 @@ function eventRefreshExpenseDashboardV8_(){
       forecast+=amount;const cat=eventNormalizeTextV7_(r[11]||'ALTRO'),bucket=['VIAGGI','VITTO','ALLOGGIO','NOLEGGI'].includes(cat)?cat:'ALTRO';buckets[bucket]+=amount;
     }else if(eventNormalizeTextV7_(r[4])==='PAGATO')paid+=amount;
   });
-  if(participants)participants.getRange(3,1,15,19).getValues().forEach(r=>{const name=String(r[0]||'').trim(),surname=String(r[1]||'').trim();if(!name&&!surname)return;if(eventNormalizeTextV7_(r[7])==='TECNICO')return;const status=eventNormalizeTextV7_(r[8]),max=Number(r[9]||0),passed=Number(r[10]||0),current=status==='ASSENTE'?0:(passed>0?passed:max);forecast+=current;buckets.RIMBORSI+=current;if(passed>0)paid+=passed;});
+  if(participants)participants.getRange(EVENT_APP.PARTICIPANTS.CONV_START,1,EVENT_APP.PARTICIPANTS.CONV_COUNT,19).getValues().forEach(r=>{const name=String(r[0]||'').trim(),surname=String(r[1]||'').trim();if(!name&&!surname)return;if(eventNormalizeTextV7_(r[7])==='TECNICO')return;const status=eventNormalizeTextV7_(r[8]),max=Number(r[9]||0),passed=Number(r[10]||0),current=status==='ASSENTE'?0:(passed>0?passed:max);forecast+=current;buckets.RIMBORSI+=current;if(passed>0)paid+=passed;});
   expense.getRange('D2').setValue(forecast).setNumberFormat('€ #,##0.00');
   expense.getRange('F2').setValue(paid).setNumberFormat('€ #,##0.00');
   expense.getRange('H2').setValue(Math.max(forecast-paid,0)).setNumberFormat('€ #,##0.00');
@@ -430,7 +423,7 @@ function eventSaveExpensesV8_(master,child,eventId,meta){
     old[12]=paidDate;old[13]='PREV. '+quoteNo;old[14]=documents;old[15]='[MOVIMENTO='+movement+'] [ID_PREVENTIVO='+quoteId+'] [N_PREVENTIVO='+quoteNo+']'+(imp?' [IMP='+imp+']':'')+(note?' '+note:'');old[16]=createdAt;old[17]=now;if(userRif)old[18]='RICEVUTO';else if(movement==='PREVENTIVO'&&amount>1000)old[18]=old[18]||'DA RICHIEDERE';else old[18]=old[18]||'NON NECESSARIO';old[20]=userRif;old[21]=movement==='SALDO FATTURA'&&paid;old[22]=old[21]?paidDate:(old[22]||'');old[25]=paid&&movement!=='PREVENTIVO'?(old[25]||now):(movement==='PREVENTIVO'&&qInfo&&qInfo.paid+0.005>=qInfo.budget?(old[25]||now):'');rows.push(old);
     const localRow=EXPENSES_V8.HISTORY_START_ROW+index;if(!String(r[12]||'').trim())local.getRange(localRow,13).setValue(id);if(!String(r[13]||'').trim())local.getRange(localRow,14).setValue(quoteId);if(!String(r[14]||'').trim()&&ceb)local.getRange(localRow,15).setValue(ceb);local.getRange(localRow,17).setValue(createdAt);local.getRange(localRow,18).setValue(now);
   });
-  const participants=child.getSheetByName(EVENT_APP.SHEETS.PARTICIPANTS);if(participants)participants.getRange(3,1,15,19).getValues().forEach((p,index)=>{const name=String(p[0]||'').trim(),surname=String(p[1]||'').trim(),role=eventNormalize_(p[7]),passed=Number(p[10]||0);if(role==='TECNICO'||((!name&&!surname)||!(passed>0)))return;const participantId=String(p[13]||'').trim()||('ROW-'+(index+3)),id='RIMBORSO-AUTO-'+participantId,old=oldById[id]?oldById[id].slice(0,26):new Array(26).fill(''),beneficiary=[name,surname].filter(Boolean).join(' ');old[0]=id;old[1]=eventId;old[2]='RIMBORSO';old[3]='RIMBORSO';old[4]='CEB.002';old[5]='Rimborso '+beneficiary;old[6]=beneficiary;old[7]=String(p[14]||'').trim();old[8]=0;old[9]=passed;old[10]='';old[11]='RIMBORSATO';old[12]=p[11] instanceof Date?p[11]:now;old[13]='';old[14]='';old[15]='[MOVIMENTO=RIMBORSO] [AUTO_RIMBORSO='+participantId+']'+(String(p[12]||'').trim()?' '+String(p[12]||'').trim():'');old[16]=old[16]||now;old[17]=now;old[18]='NON NECESSARIO';old[20]='';old[21]=false;old[25]=old[25]||now;rows.push(old);});
+  const participants=child.getSheetByName(EVENT_APP.SHEETS.PARTICIPANTS);if(participants)participants.getRange(EVENT_APP.PARTICIPANTS.CONV_START,1,EVENT_APP.PARTICIPANTS.CONV_COUNT,19).getValues().forEach((p,index)=>{const name=String(p[0]||'').trim(),surname=String(p[1]||'').trim(),role=eventNormalize_(p[7]),passed=Number(p[10]||0);if(role==='TECNICO'||((!name&&!surname)||!(passed>0)))return;const participantId=String(p[13]||'').trim()||('ROW-'+(index+EVENT_APP.PARTICIPANTS.CONV_START)),id='RIMBORSO-AUTO-'+participantId,old=oldById[id]?oldById[id].slice(0,26):new Array(26).fill(''),beneficiary=[name,surname].filter(Boolean).join(' ');old[0]=id;old[1]=eventId;old[2]='RIMBORSO';old[3]='RIMBORSO';old[4]='CEB.002';old[5]='Rimborso '+beneficiary;old[6]=beneficiary;old[7]=String(p[14]||'').trim();old[8]=0;old[9]=passed;old[10]='';old[11]='RIMBORSATO';old[12]=p[11] instanceof Date?p[11]:now;old[13]='';old[14]='';old[15]='[MOVIMENTO=RIMBORSO] [AUTO_RIMBORSO='+participantId+']'+(String(p[12]||'').trim()?' '+String(p[12]||'').trim():'');old[16]=old[16]||now;old[17]=now;old[18]='NON NECESSARIO';old[20]='';old[21]=false;old[25]=old[25]||now;rows.push(old);});
   eventReplaceRowsForEvent_(backend,eventId,2,rows,26);SpreadsheetApp.flush();return rows.length;
 }
 
