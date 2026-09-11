@@ -7,7 +7,6 @@ function onOpen() {
     .addSeparator()
     .addItem('📄 Crea documento dal foglio DOCUMENTI','eventCreateDocumentFromDocumentsSheetV12')
     .addItem('📂 Aggiorna elenco documenti','eventRefreshDocumentListV12')
-    .addItem('📄 Genera più documenti','eventGenerateDocuments')
     .addToUi();
   try { eventInitializeV7_(); } catch (err) { console.log('Inizializzazione Scheda evento: ' + (err.message || err)); }
   try { eventEnsureDocumentsSheetV12_(); eventRefreshDocumentListV12_(false); } catch (err) { console.log('Documenti Scheda evento: ' + (err.message || err)); }
