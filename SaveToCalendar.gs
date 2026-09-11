@@ -1,26 +1,28 @@
 function onOpen() {
   SpreadsheetApp.getUi().createMenu('Scheda evento')
-    .addItem('💾 Salva dati nel Calendario','eventSaveToCalendar')
+    .addItem('↻ Sincronizza ora col Calendario','eventSaveToCalendar')
     .addSeparator()
     .addItem('➕ Importa nuova spesa','eventImportExpenseV8')
     .addItem('🔄 Aggiorna cruscotto spese','eventRefreshExpenseDashboardV8_')
     .addSeparator()
-    .addItem('📄 Genera documenti','eventGenerateDocuments')
+    .addItem('📄 Crea documento dal foglio DOCUMENTI','eventCreateDocumentFromDocumentsSheetV12')
+    .addItem('📂 Aggiorna elenco documenti','eventRefreshDocumentListV12')
+    .addItem('📄 Genera più documenti','eventGenerateDocuments')
     .addToUi();
   try { eventInitializeV7_(); } catch (err) { console.log('Inizializzazione Scheda evento: ' + (err.message || err)); }
+  try { eventEnsureDocumentsSheetV12_(); eventRefreshDocumentListV12_(false); } catch (err) { console.log('Documenti Scheda evento: ' + (err.message || err)); }
 }
 
 function eventSaveToCalendar() {
-  const ui=SpreadsheetApp.getUi(),child=SpreadsheetApp.getActive(),meta=eventMeta_();
+  const child=SpreadsheetApp.getActive(),meta=eventMeta_();
   const eventId=String(meta.EVENT_ID||'').trim(),masterId=String(meta.MASTER_SPREADSHEET_ID||'').trim();
   if(!eventId)throw new Error('ID EVENTO mancante nel foglio _META.');
   if(!masterId)throw new Error('MASTER_SPREADSHEET_ID mancante nel foglio _META.');
-  eventInitializeV7_();
   const master=SpreadsheetApp.openById(masterId);
   const counts={participants:eventSaveParticipants_(master,child,eventId),tasks:eventSaveTasks_(master,child,eventId),expenses:eventSaveExpensesV8_(master,child,eventId,meta)};
   eventWriteMetaValue_(child.getSheetByName(EVENT_APP.SHEETS.META),'LAST_SYNC',Utilities.formatDate(new Date(),Session.getScriptTimeZone()||'Europe/Rome','dd/MM/yyyy HH:mm'));
   SpreadsheetApp.flush();
-  ui.alert('Calendario aggiornato','I dati della Scheda evento sono stati salvati nel Calendario.\n\nAttività: '+counts.tasks+'\nSpese/movimenti: '+counts.expenses+'\nPartecipanti: '+counts.participants+'\n\nLa Scheda evento non è stata ricaricata o sovrascritta.',ui.ButtonSet.OK);
+  child.toast('Attività: '+counts.tasks+' | Spese: '+counts.expenses+' | Partecipanti: '+counts.participants,'Calendario aggiornato',6);
   return counts;
 }
 
