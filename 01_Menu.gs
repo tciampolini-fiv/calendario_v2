@@ -6,9 +6,6 @@ function onOpen() {
     .addItem('↻ Aggiorna scheda selezionata', 'syncSelectedEventSheetToCalendarV2')
     .addItem('↻ Aggiorna tutte le schede modificate', 'syncChangedEventSheetsV12')
     .addSeparator()
-    .addItem('⚡ Attiva sincronizzazione automatica', 'setupCalendarAutoSyncFastV12')
-    .addItem('⏸ Disattiva sincronizzazione automatica', 'disableCalendarAutoSyncFastV12')
-    .addSeparator()
     .addItem('Crea cartella di lavoro', 'createWorkFolderForSelectedEvent')
     .addItem('Genera documenti evento', 'generateDocumentsForSelectedEvent')
     .addToUi();
