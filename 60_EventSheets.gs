@@ -18,7 +18,7 @@ function prepareEventSheetForSelectedEventV2(){
     created=true;
   }
 
-  if(!isCurrentEventSheet_(child))throw new Error('La Scheda evento collegata non usa il layout V11 corrente. Non viene modificata automaticamente.');
+  if(!isCurrentEventSheet_(child))throw new Error('La Scheda evento collegata non usa il layout corrente. Non viene modificata automaticamente.');
   validateEventSheetIdentity_(child,eventId);
   writeEventMeta_(child,eventId,event,folder.folderId);
   applyEventCommitment_(child,event);
@@ -38,12 +38,14 @@ function prepareEventSheetForSelectedEventV2(){
 
 function isCurrentEventSheet_(child){
   if(!child)return false;
-  const expenses=child.getSheetByName(EVENT_SHEET.SHEETS.EXPENSES),participants=child.getSheetByName(EVENT_SHEET.SHEETS.PARTICIPANTS),meta=child.getSheetByName(EVENT_SHEET.SHEETS.META);
-  if(!expenses||!participants||!meta)return false;
-  return normalize_(expenses.getRange('A8').getDisplayValue())==='N. PREVENTIVO'&&
+  const expenses=child.getSheetByName(EVENT_SHEET.SHEETS.EXPENSES),participants=child.getSheetByName(EVENT_SHEET.SHEETS.PARTICIPANTS),meta=child.getSheetByName(EVENT_SHEET.SHEETS.META),tasks=child.getSheetByName(EVENT_SHEET.SHEETS.TASKS);
+  if(!expenses||!participants||!meta||!tasks)return false;
+  const baseLayout=normalize_(expenses.getRange('A8').getDisplayValue())==='N. PREVENTIVO'&&
     normalize_(expenses.getRange('B12').getDisplayValue())==='N. PAGAMENTO'&&
     normalize_(expenses.getRange('A19').getDisplayValue())==='N. PREVENTIVO'&&
     normalize_(participants.getRange('H2').getDisplayValue())==='RUOLO';
+  const activityLayout=normalize_(tasks.getRange('A1').getDisplayValue())==='OBIETTIVO'&&normalize_(tasks.getRange('C1').getDisplayValue())==='ATTIVITA';
+  return baseLayout&&activityLayout;
 }
 
 function getLinkedEventSheet_(event){
@@ -66,7 +68,7 @@ function writeEventMeta_(child,eventId,event,folderId){
     MASTER_SPREADSHEET_ID:APP.SPREADSHEET_ID,
     EVENT_FOLDER_ID:folderId,
     EVENT_SHEET_ID:child.getId(),
-    SYNC_VERSION:'11',
+    SYNC_VERSION:'14',
     EVENT_LABEL:buildEventSheetLabel_(event),
     EVENT_TYPE:String(event[APP.CALENDAR_HEADERS.TYPE]||''),
     EVENT_CLASS:String(event[APP.CALENDAR_HEADERS.CLASS]||''),
@@ -140,7 +142,7 @@ function participantBackendToLocal_(r,isAggregated){
 }
 
 function technicianDirectory_(){return[
-  ['ZAGGIA','Leonardo','Zaggia'],['CRISI','Andrea','Crisi'],['RAVEGLIA','Matteo','Raveglia'],['CARICATO','Francesco','Caricato'],['PICCIAU','Gianluigi','Picciau'],['SENSINI','Alessandra','Sensini'],['NUICOLUCCI','Matteo','Nuicolucci'],['CAMBONI','Mattia','Camboni'],['CANGEMI','Antonino','Cangemi'],['LOPERFIDO','Daniel','Loperfido']
+  ['ZAGGIA','Leonardo','Zaggia'],['CRISI','Andrea','Crisi'],['RAVEGLIA','Matteo','Raveglia'],['CARICATO','Francesco','Caricato'],['PICCIAU','Gianluigi','Picciau'],['SENSINI','Alessandra','Sensini'],['NICOLUCCI','Matteo','Nicolucci'],['CAMBONI','Mattia','Camboni'],['CANGEMI','Antonino','Cangemi'],['LOPERFIDO','Daniel','Loperfido']
 ];}
 function resolveFullTechnicians_(raw){const text=normalize_(raw);if(!text)return[];return technicianDirectory_().filter(x=>text.indexOf(x[0])>=0).map(x=>({name:x[1],surname:x[2]}));}
 function populateCurrentTechnicians_(child,event){
