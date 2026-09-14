@@ -1,31 +1,67 @@
 const ACTIVITY_V13=Object.freeze({VISIBLE:7,WIDTH:19,TYPE:8,OBJECTIVE_ID:9,TASK_ID:10,OBJECTIVE_ORDER:11,STEP_ORDER:12,COLOR:13,AUTO_DUE:14,PREVIOUS_ID:15,COMPLETED_AT:16,PATH:17,DUE_MODE:18,OFFSET:19});
+const ACTIVITIES_EMERGENCY_MANUAL=true;
 
+/**
+ * MODALITA MANUALE DI EMERGENZA - 14/09/2026
+ *
+ * Per le schede gia esistenti il foglio Attivita NON viene mai rigenerato,
+ * sincronizzato o riordinato da questo file. Il Calendario puo aggiornare i
+ * metadati generali dell'evento, ma Attivita resta completamente manuale.
+ */
 function prepareEventSheetForSelectedEventV13(){
-  const event=selectedEvent_(),eventId=ensureEventId_(event),folder=createWorkFolderForEvent_(eventId,event,event._row);let child=getLinkedEventSheet_(event),created=false;
-  if(!child){const copy=DriveApp.getFileById(EVENT_SHEET.TEMPLATE_ID).makeCopy(buildEventSheetName_(event),DriveApp.getFolderById(folder.folderId));child=SpreadsheetApp.openById(copy.getId());child.setSpreadsheetLocale('it_IT');child.setSpreadsheetTimeZone(APP.TZ);created=true;}
-  if(!isCurrentEventSheet_(child))throw new Error('La Scheda evento collegata non usa il modello corrente.');validateEventSheetIdentity_(child,eventId);writeEventMeta_(child,eventId,event,folder.folderId);applyEventCommitment_(child,event);
-  ensureDefaultObjectivesForEventV14_(eventId,event);writeObjectivesToEventSheetV13_(eventId,child);
-  writeCurrentParticipantsToEventSheet_(eventId,child);populateCurrentTechnicians_(child,event);setEventSheetLink_(event._row,child.getUrl());refreshCalendarActivityDashboardV14_(eventId);SpreadsheetApp.flush();SpreadsheetApp.getActive().toast(created?'Scheda evento creata':'Scheda evento aggiornata','Scheda evento',5);return{created:created,id:child.getId(),url:child.getUrl()};
-}
-function isObjectiveActivitySheetV13_(child){const sh=child&&child.getSheetByName(EVENT_SHEET.SHEETS.TASKS);return !!sh&&normalize_(sh.getRange('A1').getDisplayValue())==='OBIETTIVO'&&normalize_(sh.getRange('C1').getDisplayValue())==='ATTIVITA';}
-function clearActivityRowGroupsV13_(sheet){try{for(let r=2;r<=Math.min(500,sheet.getMaxRows());r++){const g=sheet.getRowGroup(r,1);if(g)g.remove();}}catch(e){console.log('Pulizia gruppi righe: '+e.message);}}
-function writeObjectivesToEventSheetV13_(eventId,child){
-  const sheet=child.getSheetByName(EVENT_SHEET.SHEETS.TASKS);if(!sheet)throw new Error('Foglio Attività non trovato.');const objectives=getActivityObjectivesForEventV14_(eventId),rows=[];
-  objectives.forEach(o=>{rows.push([o.name,o.dueDate||'','＋','','',o.status,'','OBIETTIVO',o.id,'',o.order||'','',o.color||'#D9EAF7',false,'','CUSTOM','','','']);o.tasks.forEach(t=>rows.push(['','',t.task||'',t.dueDate||'',activityIsDoneV14_(t.status),t.status||'IN ATTESA',t.note||'','TASK',o.id,t.id||'',o.order||'',t.stepOrder||'',o.color||'',t.autoDue===true,t.previousTaskId||t.dependencyId||'',t.completedAt||'',t.path||'MANUALE',t.dueMode||'',t.offsetDays===''?'':t.offsetDays]));});
-  const actionRow=rows.length+2;rows.push(['＋ AGGIUNGI OBIETTIVO','','','','','','','AGGIUNGI_OBIETTIVO','','','','','','','','','','','']);
-  clearActivityRowGroupsV13_(sheet);const max=Math.min(500,sheet.getMaxRows());if(max>=2){sheet.getRange(2,1,max-1,ACTIVITY_V13.WIDTH).clearContent();sheet.getRange(2,5,max-1,1).clearDataValidations();}
-  if(rows.length)sheet.getRange(2,1,rows.length,ACTIVITY_V13.WIDTH).setValues(rows);
-  objectives.forEach(o=>{const idx=rows.findIndex(r=>r[7]==='OBIETTIVO'&&r[8]===o.id);if(idx<0)return;const headerRow=idx+2;sheet.getRange(headerRow,1,1,7).setBackground(o.color||'#D9EAF7').setFontWeight('bold');sheet.getRange(headerRow,3).setHorizontalAlignment('center').setFontWeight('bold');const count=o.tasks.length;if(count){const first=headerRow+1;sheet.getRange(first,5,count,1).insertCheckboxes();try{sheet.getRange(first,1,count,1).shiftRowGroupDepth(1);}catch(e){console.log('Gruppo righe: '+e.message);}}});
-  sheet.getRange(actionRow,1,1,7).setFontWeight('bold');sheet.getRange(actionRow,1).setHorizontalAlignment('left');sheet.getRange(2,2,Math.max(rows.length,1),1).setNumberFormat('dd/MM/yyyy');sheet.getRange(2,4,Math.max(rows.length,1),1).setNumberFormat('dd/MM/yyyy');
-  try{sheet.hideColumns(8,12);}catch(e){}
+  const event=selectedEvent_();
+  const eventId=ensureEventId_(event);
+  const folder=createWorkFolderForEvent_(eventId,event,event._row);
+  let child=getLinkedEventSheet_(event),created=false;
+
+  if(!child){
+    const copy=DriveApp.getFileById(EVENT_SHEET.TEMPLATE_ID).makeCopy(buildEventSheetName_(event),DriveApp.getFolderById(folder.folderId));
+    child=SpreadsheetApp.openById(copy.getId());
+    child.setSpreadsheetLocale('it_IT');
+    child.setSpreadsheetTimeZone(APP.TZ);
+    created=true;
+  }
+
+  if(!isCurrentEventSheet_(child))throw new Error('La Scheda evento collegata non usa il modello corrente.');
+  validateEventSheetIdentity_(child,eventId);
+  writeEventMeta_(child,eventId,event,folder.folderId);
+  applyEventCommitment_(child,event);
+
+  // Le altre sezioni restano come prima. Attivita non viene mai riscritta.
+  if(created){
+    writeCurrentParticipantsToEventSheet_(eventId,child);
+    populateCurrentTechnicians_(child,event);
+  }
+
+  setEventSheetLink_(event._row,child.getUrl());
+  SpreadsheetApp.flush();
+  SpreadsheetApp.getActive().toast(
+    created?'Scheda evento creata - Attivita manuale':'Dati generali aggiornati - Attivita non modificata',
+    'Scheda evento',5
+  );
+  return{created:created,id:child.getId(),url:child.getUrl()};
 }
 
-function syncSelectedEventSheetToCalendarV13(){const event=selectedEvent_(),eventId=ensureEventId_(event),child=getLinkedEventSheet_(event);if(!child)throw new Error('Nessuna Scheda evento collegata.');syncObjectiveEventSheetV13_(child,eventId);SpreadsheetApp.getActive().toast('Scheda sincronizzata','Attività',4);}
-function syncAllEventSheetsToCalendarV13(){const cal=sh_(APP.SHEETS.CALENDAR),map=headerMap_(cal),last=cal.getLastRow();let synced=0,skipped=0;for(let row=2;row<=last;row++){const eventId=String(cal.getRange(row,map[APP.CALENDAR_HEADERS.ID]).getDisplayValue()||'').trim();if(!eventId)continue;const event={_row:row};Object.keys(map).forEach(h=>event[h]=cal.getRange(row,map[h]).getValue());const child=getLinkedEventSheet_(event);if(!child||!isObjectiveActivitySheetV13_(child)){skipped++;continue;}syncObjectiveEventSheetV13_(child,eventId);synced++;}SpreadsheetApp.getUi().alert('Sincronizzazione attività','Schede sincronizzate: '+synced+'\nSchede non compatibili/assenti: '+skipped,SpreadsheetApp.getUi().ButtonSet.OK);}
-function syncObjectiveEventSheetV13_(child,eventId){
-  validateEventSheetIdentity_(child,eventId);const local=child.getSheetByName(EVENT_SHEET.SHEETS.TASKS);if(!local||!isObjectiveActivitySheetV13_(child))throw new Error('La Scheda non usa il layout Obiettivi.');const b=ensureActivityBackendV14_(),oldObjs=b.objectives.getDataRange().getValues(),oldTasks=b.checklist.getDataRange().getValues(),objById={},taskById={};oldObjs.slice(1).forEach(r=>{if(String(r[1])===String(eventId)&&r[0])objById[String(r[0])]=r;});oldTasks.slice(1).forEach(r=>{if(String(r[1])===String(eventId)&&r[0])taskById[String(r[0])]=r;});
-  const last=Math.min(500,Math.max(local.getLastRow(),2)),values=local.getRange(2,1,last-1,ACTIVITY_V13.WIDTH).getValues(),now=new Date(),objs=[],tasks=[],validObjectives={};
-  values.forEach((r,i)=>{if(normalize_(r[7])!=='OBIETTIVO'||!String(r[0]||'').trim())return;let id=String(r[8]||'').trim();if(!id){id='OBJ-'+Utilities.getUuid();local.getRange(i+2,9).setValue(id);}const old=objById[id]||[],visibleColor=local.getRange(i+2,1).getBackground(),color=visibleColor&&visibleColor!=='#ffffff'?visibleColor:String(r[12]||old[3]||activityColorV14_(objs.length));objs.push([id,eventId,String(r[0]).trim(),color,r[1] instanceof Date?r[1]:'',Number(r[10]||old[5]||((objs.length+1)*10)),old[6]||'SCHEDA EVENTO',old[7]||('CUSTOM:'+normalize_(r[0])),old[8]||'',old[9]||now,now]);validObjectives[id]=true;local.getRange(i+2,13).setValue(color);});
-  values.forEach((r,i)=>{if(normalize_(r[7])!=='TASK'||!String(r[2]||'').trim()||!validObjectives[String(r[8]||'')])return;let id=String(r[9]||'').trim();if(!id){id='TASK-'+Utilities.getUuid();local.getRange(i+2,10).setValue(id);}const old=taskById[id]||[],done=r[4]===true,status=done?'FATTO':(normalize_(r[5])||'IN ATTESA'),oid=String(r[8]),step=Number(r[11]||10),objOrder=Number(r[10]||10),prev=String(r[14]||'').trim(),completed=done?(r[15] instanceof Date?r[15]:(old[11] instanceof Date?old[11]:now)):'',path=String(r[16]||old[20]||'MANUALE').trim()||'MANUALE',mode=normalize_(r[17]||old[21]||'MANUAL'),offset=r[18]!==''?Number(r[18]):(old[22]!==''?Number(old[22]):2);tasks.push([id,eventId,objOrder*100+step,String(r[2]).trim(),old[4]||activityTaskCategoryV14_(r[2]),r[3] instanceof Date?r[3]:'',status,old[7]||'',old[8]||'SCHEDA EVENTO',old[9]||'',String(r[6]||'').trim(),completed,now,old[13]||tasks.length+1,prev,prev&&status!=='FATTO'?'DIPENDENZA':'',oid,step,r[13]===true,prev,path,mode,offset]);});
-  replaceCentralRowsForEvent_(b.objectives,eventId,2,objs,11);replaceCentralRowsForEvent_(b.checklist,eventId,2,tasks,23);const found=findCalendarEventById_(eventId);syncActivityStatesForEventV14_(eventId,found&&found.event);refreshCalendarActivityDashboardV14_(eventId);SpreadsheetApp.flush();return{objectives:objs.length,tasks:tasks.length};
+function isObjectiveActivitySheetV13_(child){
+  const sh=child&&child.getSheetByName(EVENT_SHEET.SHEETS.TASKS);
+  return !!sh;
+}
+
+// In modalita emergenza nessuna funzione deve ricostruire o formattare Attivita.
+function clearActivityRowGroupsV13_(sheet){return 0;}
+function writeObjectivesToEventSheetV13_(eventId,child){return{manual:true};}
+function syncObjectiveEventSheetV13_(child,eventId){return{manual:true,objectives:0,tasks:0};}
+
+function syncSelectedEventSheetToCalendarV13(){
+  SpreadsheetApp.getActive().toast('Attivita in modalita manuale: nessuna sincronizzazione eseguita.','Attivita',5);
+  return{manual:true};
+}
+
+function syncAllEventSheetsToCalendarV13(){
+  SpreadsheetApp.getUi().alert(
+    'Attivita in modalita manuale',
+    'La sincronizzazione automatica/manuale delle Attivita e temporaneamente disattivata. Nessuna scheda e stata modificata.',
+    SpreadsheetApp.getUi().ButtonSet.OK
+  );
+  return{manual:true};
 }
