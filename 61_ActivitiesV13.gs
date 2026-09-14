@@ -1,16 +1,70 @@
 const ACTIVITY_V13=Object.freeze({VISIBLE:7,WIDTH:19,TYPE:8,OBJECTIVE_ID:9,TASK_ID:10,OBJECTIVE_ORDER:11,STEP_ORDER:12,COLOR:13,AUTO_DUE:14,PREVIOUS_ID:15,COMPLETED_AT:16,PATH:17,DUE_MODE:18,OFFSET:19});
+const EVENT_SHEET_SYNC_VERSION_V22='14';
 
+/**
+ * Safe refresh v2.2.
+ *
+ * Principio: una scheda evento gia esistente viene prima letta e salvata nel
+ * backend centrale; solo dopo viene rigenerata. In questo modo il pulsante
+ * "Crea / aggiorna scheda" non cancella modifiche locali alle Attivita.
+ *
+ * I Partecipanti delle schede esistenti NON vengono riscritti finche non
+ * avremo un sync bidirezionale dedicato: oggi writeCurrentParticipantsToEventSheet_
+ * e distruttiva per eventuali modifiche fatte direttamente nella scheda.
+ */
 function prepareEventSheetForSelectedEventV13(){
-  const event=selectedEvent_(),eventId=ensureEventId_(event),folder=createWorkFolderForEvent_(eventId,event,event._row);let child=getLinkedEventSheet_(event),created=false;
-  if(!child){const copy=DriveApp.getFileById(EVENT_SHEET.TEMPLATE_ID).makeCopy(buildEventSheetName_(event),DriveApp.getFolderById(folder.folderId));child=SpreadsheetApp.openById(copy.getId());child.setSpreadsheetLocale('it_IT');child.setSpreadsheetTimeZone(APP.TZ);created=true;}
-  if(!isCurrentEventSheet_(child))throw new Error('La Scheda evento collegata non usa il modello corrente.');validateEventSheetIdentity_(child,eventId);writeEventMeta_(child,eventId,event,folder.folderId);applyEventCommitment_(child,event);
-  ensureDefaultObjectivesForEventV14_(eventId,event);writeObjectivesToEventSheetV13_(eventId,child);
-  writeCurrentParticipantsToEventSheet_(eventId,child);populateCurrentTechnicians_(child,event);setEventSheetLink_(event._row,child.getUrl());refreshCalendarActivityDashboardV14_(eventId);SpreadsheetApp.flush();SpreadsheetApp.getActive().toast(created?'Scheda evento creata':'Scheda evento aggiornata','Scheda evento',5);return{created:created,id:child.getId(),url:child.getUrl()};
+  const event=selectedEvent_(),eventId=ensureEventId_(event),folder=createWorkFolderForEvent_(eventId,event,event._row);
+  let child=getLinkedEventSheet_(event),created=false;
+
+  if(!child){
+    const copy=DriveApp.getFileById(EVENT_SHEET.TEMPLATE_ID).makeCopy(buildEventSheetName_(event),DriveApp.getFolderById(folder.folderId));
+    child=SpreadsheetApp.openById(copy.getId());
+    child.setSpreadsheetLocale('it_IT');
+    child.setSpreadsheetTimeZone(APP.TZ);
+    created=true;
+  }
+
+  if(!isCurrentEventSheet_(child)){
+    throw new Error('La Scheda evento collegata usa un layout precedente. Per sicurezza v2.2 non la modifica automaticamente: eseguire prima la diagnosi/migrazione della scheda.');
+  }
+  validateEventSheetIdentity_(child,eventId);
+
+  // Per una scheda gia in uso, la copia locale delle Attivita e la fonte piu
+  // recente. La salviamo PRIMA di qualsiasi re-render.
+  if(!created){
+    if(!isObjectiveActivitySheetV13_(child)){
+      throw new Error('La Scheda evento usa ancora il vecchio layout Attivita. Nessun dato e stato modificato. Eseguire la migrazione v2.2 della scheda.');
+    }
+    syncObjectiveEventSheetV13_(child,eventId);
+  }
+
+  writeEventMeta_(child,eventId,event,folder.folderId);
+  applyEventCommitment_(child,event);
+  ensureDefaultObjectivesForEventV14_(eventId,event);
+  writeObjectivesToEventSheetV13_(eventId,child);
+
+  // Su una nuova scheda il backend centrale e autorevole. Su una scheda gia
+  // esistente non tocchiamo i partecipanti finche non esiste il sync locale -> centrale.
+  if(created)writeCurrentParticipantsToEventSheet_(eventId,child);
+  populateCurrentTechnicians_(child,event);
+  markEventSheetSyncVersionV22_(child);
+  setEventSheetLink_(event._row,child.getUrl());
+  refreshCalendarActivityDashboardV14_(eventId);
+  SpreadsheetApp.flush();
+  SpreadsheetApp.getActive().toast(created?'Scheda evento creata':'Scheda evento aggiornata in modalita sicura','Scheda evento',5);
+  return{created:created,id:child.getId(),url:child.getUrl()};
 }
+
+function markEventSheetSyncVersionV22_(child){
+  const meta=child&&child.getSheetByName(EVENT_SHEET.SHEETS.META);
+  if(!meta)return;
+  writeMeta_(meta,{SYNC_VERSION:EVENT_SHEET_SYNC_VERSION_V22,LAST_SYNC:Utilities.formatDate(new Date(),APP.TZ,'dd/MM/yyyy HH:mm:ss')});
+}
+
 function isObjectiveActivitySheetV13_(child){const sh=child&&child.getSheetByName(EVENT_SHEET.SHEETS.TASKS);return !!sh&&normalize_(sh.getRange('A1').getDisplayValue())==='OBIETTIVO'&&normalize_(sh.getRange('C1').getDisplayValue())==='ATTIVITA';}
 function clearActivityRowGroupsV13_(sheet){try{for(let r=2;r<=Math.min(500,sheet.getMaxRows());r++){const g=sheet.getRowGroup(r,1);if(g)g.remove();}}catch(e){console.log('Pulizia gruppi righe: '+e.message);}}
 function writeObjectivesToEventSheetV13_(eventId,child){
-  const sheet=child.getSheetByName(EVENT_SHEET.SHEETS.TASKS);if(!sheet)throw new Error('Foglio Attività non trovato.');const objectives=getActivityObjectivesForEventV14_(eventId),rows=[];
+  const sheet=child.getSheetByName(EVENT_SHEET.SHEETS.TASKS);if(!sheet)throw new Error('Foglio Attivita non trovato.');const objectives=getActivityObjectivesForEventV14_(eventId),rows=[];
   objectives.forEach(o=>{rows.push([o.name,o.dueDate||'','＋','','',o.status,'','OBIETTIVO',o.id,'',o.order||'','',o.color||'#D9EAF7',false,'','CUSTOM','','','']);o.tasks.forEach(t=>rows.push(['','',t.task||'',t.dueDate||'',activityIsDoneV14_(t.status),t.status||'IN ATTESA',t.note||'','TASK',o.id,t.id||'',o.order||'',t.stepOrder||'',o.color||'',t.autoDue===true,t.previousTaskId||t.dependencyId||'',t.completedAt||'',t.path||'MANUALE',t.dueMode||'',t.offsetDays===''?'':t.offsetDays]));});
   const actionRow=rows.length+2;rows.push(['＋ AGGIUNGI OBIETTIVO','','','','','','','AGGIUNGI_OBIETTIVO','','','','','','','','','','','']);
   clearActivityRowGroupsV13_(sheet);const max=Math.min(500,sheet.getMaxRows());if(max>=2){sheet.getRange(2,1,max-1,ACTIVITY_V13.WIDTH).clearContent();sheet.getRange(2,5,max-1,1).clearDataValidations();}
@@ -20,8 +74,13 @@ function writeObjectivesToEventSheetV13_(eventId,child){
   try{sheet.hideColumns(8,12);}catch(e){}
 }
 
-function syncSelectedEventSheetToCalendarV13(){const event=selectedEvent_(),eventId=ensureEventId_(event),child=getLinkedEventSheet_(event);if(!child)throw new Error('Nessuna Scheda evento collegata.');syncObjectiveEventSheetV13_(child,eventId);SpreadsheetApp.getActive().toast('Scheda sincronizzata','Attività',4);}
-function syncAllEventSheetsToCalendarV13(){const cal=sh_(APP.SHEETS.CALENDAR),map=headerMap_(cal),last=cal.getLastRow();let synced=0,skipped=0;for(let row=2;row<=last;row++){const eventId=String(cal.getRange(row,map[APP.CALENDAR_HEADERS.ID]).getDisplayValue()||'').trim();if(!eventId)continue;const event={_row:row};Object.keys(map).forEach(h=>event[h]=cal.getRange(row,map[h]).getValue());const child=getLinkedEventSheet_(event);if(!child||!isObjectiveActivitySheetV13_(child)){skipped++;continue;}syncObjectiveEventSheetV13_(child,eventId);synced++;}SpreadsheetApp.getUi().alert('Sincronizzazione attività','Schede sincronizzate: '+synced+'\nSchede non compatibili/assenti: '+skipped,SpreadsheetApp.getUi().ButtonSet.OK);}
+function syncSelectedEventSheetToCalendarV13(){
+  const event=selectedEvent_(),eventId=ensureEventId_(event),child=getLinkedEventSheet_(event);
+  if(!child)throw new Error('Nessuna Scheda evento collegata.');
+  if(!isObjectiveActivitySheetV13_(child))throw new Error('La Scheda usa un layout Attivita precedente. Nessun dato e stato modificato.');
+  syncObjectiveEventSheetV13_(child,eventId);markEventSheetSyncVersionV22_(child);SpreadsheetApp.getActive().toast('Scheda sincronizzata','Attivita',4);
+}
+function syncAllEventSheetsToCalendarV13(){const cal=sh_(APP.SHEETS.CALENDAR),map=headerMap_(cal),last=cal.getLastRow();let synced=0,skipped=0;for(let row=2;row<=last;row++){const eventId=String(cal.getRange(row,map[APP.CALENDAR_HEADERS.ID]).getDisplayValue()||'').trim();if(!eventId)continue;const event={_row:row};Object.keys(map).forEach(h=>event[h]=cal.getRange(row,map[h]).getValue());const child=getLinkedEventSheet_(event);if(!child||!isObjectiveActivitySheetV13_(child)){skipped++;continue;}syncObjectiveEventSheetV13_(child,eventId);markEventSheetSyncVersionV22_(child);synced++;}SpreadsheetApp.getUi().alert('Sincronizzazione attivita','Schede sincronizzate: '+synced+'\nSchede non compatibili/assenti: '+skipped,SpreadsheetApp.getUi().ButtonSet.OK);}
 function syncObjectiveEventSheetV13_(child,eventId){
   validateEventSheetIdentity_(child,eventId);const local=child.getSheetByName(EVENT_SHEET.SHEETS.TASKS);if(!local||!isObjectiveActivitySheetV13_(child))throw new Error('La Scheda non usa il layout Obiettivi.');const b=ensureActivityBackendV14_(),oldObjs=b.objectives.getDataRange().getValues(),oldTasks=b.checklist.getDataRange().getValues(),objById={},taskById={};oldObjs.slice(1).forEach(r=>{if(String(r[1])===String(eventId)&&r[0])objById[String(r[0])]=r;});oldTasks.slice(1).forEach(r=>{if(String(r[1])===String(eventId)&&r[0])taskById[String(r[0])]=r;});
   const last=Math.min(500,Math.max(local.getLastRow(),2)),values=local.getRange(2,1,last-1,ACTIVITY_V13.WIDTH).getValues(),now=new Date(),objs=[],tasks=[],validObjectives={};
