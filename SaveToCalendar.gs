@@ -14,7 +14,7 @@ function onOpen() {
 
 function eventSaveToCalendar() {
   const child=SpreadsheetApp.getActive(),meta=eventMeta_();
-  eventAssertV15_(child,meta);
+  eventAssertV16_(child,meta);
   const eventId=String(meta.EVENT_ID||'').trim(),masterId=String(meta.MASTER_SPREADSHEET_ID||'').trim();
   if(!eventId)throw new Error('ID EVENTO mancante nel foglio _META.');
   if(!masterId)throw new Error('MASTER_SPREADSHEET_ID mancante nel foglio _META.');
@@ -50,11 +50,11 @@ function eventSaveActivitiesV13_(master,child,eventId){
   const oldTaskRows=taskBackend.getDataRange().getValues(),oldTaskById={};oldTaskRows.slice(1).forEach(r=>{if(String(r[1])===String(eventId)&&r[0])oldTaskById[String(r[0])]=r;});
   const last=Math.min(EVENT_APP.ACTIVITY.MAX,Math.max(local.getLastRow(),2)),rows=local.getRange(2,1,last-1,EVENT_APP.ACTIVITY.COLS).getValues(),now=new Date(),objectives=[],tasks=[],validObjectives={};
   rows.forEach((r,i)=>{
-    if(eventNormalize_(r[7])!=='OBIETTIVO')return;let oid=String(r[8]||'').trim();if(!oid){oid='OBJ-'+Utilities.getUuid();local.getRange(i+2,9).setValue(oid);}const name=String(r[0]||'').trim();if(!name)return;const old=oldObjById[oid]||[],visible=String(local.getRange(i+2,1).getBackground()||'').toLowerCase(),color=visible&&visible!=='#ffffff'?visible:String(r[12]||old[3]||'#D9EAF7');local.getRange(i+2,13).setValue(color);objectives.push([oid,eventId,name,color,r[1] instanceof Date?r[1]:'',Number(r[10]||old[5]||((objectives.length+1)*10)),old[6]||'SCHEDA EVENTO',old[7]||('CUSTOM:'+eventNormalize_(name)),old[8]||'',old[9]||now,now]);validObjectives[oid]=true;
+    if(eventNormalize_(r[7])!=='OBIETTIVO')return;let oid=String(r[8]||'').trim();if(!oid){oid='OBJ-'+Utilities.getUuid();local.getRange(i+2,9).setValue(oid);}const name=String(r[0]||'').trim();if(!name)return;const old=oldObjById[oid]||[],visible=String(local.getRange(i+2,1).getBackground()||'').toLowerCase(),color=visible&&visible!=='#ffffff'?visible:String(r[12]||old[3]||'#D9EAF7');local.getRange(i+2,13).setValue(color);objectives.push([oid,eventId,name,color,r[1] instanceof Date?r[1]:'',Number(r[10]||old[5]||((objectives.length+1)*10)),old[6]||'SCHEDA EVENTO',old[7]||('CUSTOM:'+eventNormalize_(name)),String(r[3]||old[8]||'').trim(),old[9]||now,now]);validObjectives[oid]=true;
   });
   rows.forEach((r,i)=>{
     if(eventNormalize_(r[7])!=='TASK')return;const task=String(r[2]||'').trim(),oid=String(r[8]||'').trim();if(!task||!validObjectives[oid])return;let tid=String(r[9]||'').trim();if(!tid){tid='TASK-'+Utilities.getUuid();local.getRange(i+2,10).setValue(tid);}const old=oldTaskById[tid]||[],checked=Boolean(r[4]),status=checked?'FATTO':(eventNormalize_(r[5])||'IN ATTESA'),step=Number(r[11]||10),objectiveOrder=Number(r[10]||10),previous=String(r[14]||'').trim(),completed=checked?(r[15] instanceof Date?r[15]:(old[11] instanceof Date?old[11]:now)):'',path=String(r[16]||old[20]||'MANUALE').trim()||'MANUALE',mode=eventNormalize_(r[17]||old[21]||'MANUAL'),offset=r[18]!==''?Number(r[18]):(old[22]!==''?Number(old[22]):2);
-    tasks.push([tid,eventId,objectiveOrder*100+step,task,old[4]||eventTaskCategory_(task),r[3] instanceof Date?r[3]:'',status,old[7]||'',old[8]||'SCHEDA EVENTO',old[9]||eventTaskAutoKey_(task),String(r[6]||'').trim(),completed,now,old[13]||tasks.length+1,previous,previous&&status!=='FATTO'?'DIPENDENZA':'',oid,step,r[13]===true,previous,path,mode,offset]);
+    tasks.push([tid,eventId,objectiveOrder*100+step,task,old[4]||eventTaskCategory_(task),r[1] instanceof Date?r[1]:'',status,old[7]||'',old[8]||'SCHEDA EVENTO',old[9]||eventTaskAutoKey_(task),String(r[3]||'').trim(),completed,now,old[13]||tasks.length+1,previous,previous&&status!=='FATTO'?'DIPENDENZA':'',oid,step,r[13]===true,previous,path,mode,offset]);
   });
   eventReplaceRowsForEvent_(objectiveBackend,eventId,2,objectives,11);eventReplaceRowsForEvent_(taskBackend,eventId,2,tasks,23);return tasks.length;
 }
@@ -94,12 +94,13 @@ function eventResolveCeb_(master,meta,category,current){
 function eventWriteMetaValue_(sheet,key,value){if(!sheet)return;const rows=sheet.getRange(1,1,Math.max(sheet.getLastRow(),1),2).getValues(),target=eventNormalize_(key);for(let i=0;i<rows.length;i++)if(eventNormalize_(rows[i][0])===target){sheet.getRange(i+1,2).setValue(value);return;}sheet.getRange(sheet.getLastRow()+1,1,1,2).setValues([[key,value]]);}
 
 
-function eventAssertV15_(child,meta){
+function eventAssertV16_(child,meta){
   const version=String((meta&&meta.SYNC_VERSION)||'').trim();
   const sh=child.getSheetByName(EVENT_APP.SHEETS.TASKS);
-  if(version!=='15')throw new Error('Questa non e una Scheda evento V15. Le schede precedenti restano in sola consultazione.');
+  if(version!=='16')throw new Error('Questa non e una Scheda evento V16. Le schede precedenti restano in sola consultazione.');
   if(!sh)throw new Error('Foglio Attivita mancante.');
-  const expected=['OBIETTIVO','SCADENZA OBIETTIVO','ATTIVITÀ','SCADENZA','FATTO','STATO','NOTE','TIPO RIGA','ID OBIETTIVO','ID TASK','ORDINE OBIETTIVO','ORDINE STEP','COLORE','SCADENZA AUTOMATICA','ID TASK PRECEDENTE','DATA COMPLETAMENTO','PERCORSO','MODALITA SCADENZA','OFFSET GIORNI'];
+  const expected=['OBIETTIVO','SCADENZA','ATTIVITÀ','NOTE','FATTO','STATO','','TIPO RIGA','ID OBIETTIVO','ID TASK','ORDINE OBIETTIVO','ORDINE STEP','COLORE','SCADENZA AUTOMATICA','ID TASK PRECEDENTE','DATA COMPLETAMENTO','PERCORSO','MODALITA SCADENZA','OFFSET GIORNI'];
   const got=sh.getRange(1,1,1,19).getDisplayValues()[0].map(eventNormalize_);
-  for(let i=0;i<expected.length;i++)if(got[i]!==expected[i])throw new Error('Schema Attivita non compatibile con V15.');
+  for(let i=0;i<expected.length;i++)if(got[i]!==expected[i])throw new Error('Schema Attivita non compatibile con V16.');
 }
+
