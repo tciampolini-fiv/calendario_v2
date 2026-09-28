@@ -14,18 +14,18 @@ const CALENDAR_SYNC_V12 = Object.freeze({
 });
 
 function setupCalendarAutoSyncV12() {
-  const ui = SpreadsheetApp.getUi();
-  calendarEnsureSyncMetaV12_();
-  const baseline = calendarInitializeSyncBaselineV12_();
+  // V12 e incompatibile con le Schede evento V15 e con le schede storiche.
+  // Per sicurezza rimuove eventuali trigger legacy invece di crearne di nuovi.
   const handlers = ['calendarAutoSyncOnOpenV12','calendarAutoSyncTimerV12'];
+  let removed = 0;
   ScriptApp.getProjectTriggers().forEach(t => {
-    if (handlers.includes(t.getHandlerFunction())) ScriptApp.deleteTrigger(t);
+    if (handlers.includes(t.getHandlerFunction())) { ScriptApp.deleteTrigger(t); removed++; }
   });
-  ScriptApp.newTrigger('calendarAutoSyncOnOpenV12').forSpreadsheet(SpreadsheetApp.getActive().getId()).onOpen().create();
-  ScriptApp.newTrigger('calendarAutoSyncTimerV12').timeBased().everyMinutes(5).create();
-  ui.alert('Sincronizzazione automatica attivata',
-    'Baseline registrata per ' + baseline + ' Schede evento.\n\nDa ora il Calendario controlla le modifiche all apertura e ogni 5 minuti, sincronizzando solo le schede cambiate.',
-    ui.ButtonSet.OK);
+  SpreadsheetApp.getUi().alert(
+    'Auto-sync V12 disabilitato',
+    'La sincronizzazione automatica legacy non viene piu utilizzata. Trigger rimossi: ' + removed + '.',
+    SpreadsheetApp.getUi().ButtonSet.OK
+  );
 }
 
 function disableCalendarAutoSyncV12() {
@@ -38,31 +38,21 @@ function disableCalendarAutoSyncV12() {
 }
 
 function calendarAutoSyncOnOpenV12() {
-  try { syncChangedEventSheetsV12_({silent:true, limit:CALENDAR_SYNC_V12.MAX_AUTO_SYNC}); }
-  catch (err) { console.log('Auto-sync apertura: ' + (err.message || err)); }
+  // NO-OP intenzionale: eventuali trigger V12 residui non devono modificare dati.
+  return;
 }
 
 function calendarAutoSyncTimerV12() {
-  try { syncChangedEventSheetsV12_({silent:true, limit:CALENDAR_SYNC_V12.MAX_AUTO_SYNC}); }
-  catch (err) { console.log('Auto-sync timer: ' + (err.message || err)); }
+  // NO-OP intenzionale: eventuali trigger V12 residui non devono modificare dati.
+  return;
 }
 
 function syncChangedEventSheetsV12() {
-  return syncChangedEventSheetsV12_({silent:false, limit:CALENDAR_SYNC_V12.MAX_MANUAL_SYNC});
+  throw new Error('Sincronizzazione V12 disabilitata. Usa le funzioni V15 per le Schede evento nuove.');
 }
 
 function syncSelectedEventSheetToCalendarV2() {
-  const event = selectedEvent_();
-  const eventId = ensureEventId_(event);
-  const child = calendarLinkedEventSheetV12_(event);
-  if (!child) throw new Error('La riga selezionata non ha una Scheda evento collegata.');
-  if (!calendarIsCurrentEventSheetV12_(child)) throw new Error('La Scheda evento collegata non usa il layout corrente V11.');
-  const result = calendarSyncOneEventSheetV12_(eventId, event, child);
-  calendarRecordSuccessfulSyncV12_(eventId, child.getId());
-  SpreadsheetApp.getActive().toast(
-    'Attivita: ' + result.tasks + ' | Partecipanti: ' + result.participants + ' | Movimenti: ' + result.expenses,
-    'Scheda sincronizzata', 6);
-  return result;
+  throw new Error('Sincronizzazione V12 disabilitata. Le schede vecchie sono in sola consultazione.');
 }
 
 function syncChangedEventSheetsV12_(options) {
