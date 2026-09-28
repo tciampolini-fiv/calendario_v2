@@ -66,7 +66,7 @@ function writeEventMeta_(child,eventId,event,folderId){
     MASTER_SPREADSHEET_ID:APP.SPREADSHEET_ID,
     EVENT_FOLDER_ID:folderId,
     EVENT_SHEET_ID:child.getId(),
-    SYNC_VERSION:'15',
+    SYNC_VERSION:'16',
     EVENT_LABEL:buildEventSheetLabel_(event),
     EVENT_TYPE:String(event[APP.CALENDAR_HEADERS.TYPE]||''),
     EVENT_CLASS:String(event[APP.CALENDAR_HEADERS.CLASS]||''),
