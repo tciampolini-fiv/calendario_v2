@@ -94,12 +94,12 @@ function eventResolveCeb_(master,meta,category,current){
 function eventWriteMetaValue_(sheet,key,value){if(!sheet)return;const rows=sheet.getRange(1,1,Math.max(sheet.getLastRow(),1),2).getValues(),target=eventNormalize_(key);for(let i=0;i<rows.length;i++)if(eventNormalize_(rows[i][0])===target){sheet.getRange(i+1,2).setValue(value);return;}sheet.getRange(sheet.getLastRow()+1,1,1,2).setValues([[key,value]]);}
 
 
-function eventAssertV15_(child,meta){
+function eventNormalizeHeaderV15_(value){return eventNormalize_(value).normalize('NFD').replace(/[\\u0300-\\u036f]/g,'');}\n\nfunction eventAssertV15_(child,meta){
   const version=String((meta&&meta.SYNC_VERSION)||'').trim();
   const sh=child.getSheetByName(EVENT_APP.SHEETS.TASKS);
   if(version!=='15')throw new Error('Questa non e una Scheda evento V15. Le schede precedenti restano in sola consultazione.');
   if(!sh)throw new Error('Foglio Attivita mancante.');
   const expected=['OBIETTIVO','SCADENZA OBIETTIVO','ATTIVITA','SCADENZA','FATTO','STATO','NOTE','TIPO RIGA','ID OBIETTIVO','ID TASK','ORDINE OBIETTIVO','ORDINE STEP','COLORE','SCADENZA AUTOMATICA','ID TASK PRECEDENTE','DATA COMPLETAMENTO','PERCORSO','MODALITA SCADENZA','OFFSET GIORNI'];
-  const got=sh.getRange(1,1,1,19).getDisplayValues()[0].map(eventNormalize_);
+  const got=sh.getRange(1,1,1,19).getDisplayValues()[0].map(eventNormalizeHeaderV15_);
   for(let i=0;i<expected.length;i++)if(got[i]!==expected[i])throw new Error('Schema Attivita non compatibile con V15.');
 }
