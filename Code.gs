@@ -387,6 +387,8 @@ function eventEnsureObjectiveRowV14_(sh, row) {
   }
   sh.getRange(row, EVENT_APP.ACTIVITY.COLOR).setValue(color);
   sh.getRange(row, 3).setValue('＋').setHorizontalAlignment('center');
+  if (!sh.getRange(row, 6).getDisplayValue()) sh.getRange(row, 6).setValue('DA AVVIARE');
+  eventApplyStatusValidationV16_(sh, row, 'OBIETTIVO');
   sh.getRange(row, 1, 1, 6).setBackground(color).setFontWeight('bold');
   sh.getRange(row, 4).setWrap(true);
 }
@@ -435,6 +437,28 @@ function eventEnsureTaskRowV14_(sh, row) {
   sh.getRange(row, 4).setWrap(true);
   const done = sh.getRange(row, 5).getValue() === true;
   sh.getRange(row, 5).insertCheckboxes().setValue(done);
+  if (!sh.getRange(row, 6).getDisplayValue()) sh.getRange(row, 6).setValue(done ? 'FATTO' : 'IN ATTESA');
+  eventApplyStatusValidationV16_(sh, row, 'TASK');
+}
+
+function eventObjectiveStatusRuleV16_() {
+  return SpreadsheetApp.newDataValidation()
+    .requireValueInList(['DA AVVIARE', 'IN CORSO', 'COMPLETATO'], true)
+    .setAllowInvalid(false)
+    .build();
+}
+
+function eventTaskStatusRuleV16_() {
+  return SpreadsheetApp.newDataValidation()
+    .requireValueInList(['IN ATTESA', 'SCADUTO', 'FATTO'], true)
+    .setAllowInvalid(false)
+    .build();
+}
+
+function eventApplyStatusValidationV16_(sh, row, type) {
+  const cell = sh.getRange(row, 6);
+  if (type === 'OBIETTIVO') cell.setDataValidation(eventObjectiveStatusRuleV16_());
+  if (type === 'TASK') cell.setDataValidation(eventTaskStatusRuleV16_());
 }
 
 function eventHandleActivitiesEditV14_(e) {
@@ -445,7 +469,7 @@ function eventHandleActivitiesEditV14_(e) {
 
   const type = eventRowTypeV15_(sh, row);
   if (type === 'OBIETTIVO') {
-    if (col === 1 || col === 2) {
+    if (col === 1 || col === 2 || col === 6) {
       eventEnsureObjectiveRowV14_(sh, row);
       eventRefreshActivitiesV14_();
     }
@@ -526,10 +550,16 @@ function eventRefreshActivitiesV14_() {
   const objectives = {};
 
   rows.forEach(function (x) {
-    if (eventNormalizeTextV7_(x.v[7]) === 'OBIETTIVO' && x.v[8]) objectives[String(x.v[8])] = { row: x.row, due: x.v[1], tasks: [] };
+    if (eventNormalizeTextV7_(x.v[7]) === 'OBIETTIVO' && x.v[8]) {
+      objectives[String(x.v[8])] = { row: x.row, due: x.v[1], tasks: [] };
+      eventApplyStatusValidationV16_(sh, x.row, 'OBIETTIVO');
+    }
   });
   rows.forEach(function (x) {
-    if (eventNormalizeTextV7_(x.v[7]) === 'TASK' && x.v[8] && objectives[String(x.v[8])]) objectives[String(x.v[8])].tasks.push(x);
+    if (eventNormalizeTextV7_(x.v[7]) === 'TASK' && x.v[8] && objectives[String(x.v[8])]) {
+      objectives[String(x.v[8])].tasks.push(x);
+      eventApplyStatusValidationV16_(sh, x.row, 'TASK');
+    }
   });
 
   Object.keys(objectives).forEach(function (oid) {
@@ -539,11 +569,13 @@ function eventRefreshActivitiesV14_() {
 
     o.tasks.forEach(function (x) {
       const taskName = String(sh.getRange(x.row, 3).getDisplayValue() || '').trim();
+      const checked = Boolean(sh.getRange(x.row, 5).getValue());
+
       if (!taskName) {
-        sh.getRange(x.row, 6).clearContent();
+        sh.getRange(x.row, 6).setValue('IN ATTESA');
         return;
       }
-      const checked = Boolean(sh.getRange(x.row, 5).getValue());
+
       if (checked) {
         sh.getRange(x.row, 6).setValue('FATTO');
         return;
@@ -563,19 +595,21 @@ function eventRefreshActivitiesV14_() {
         sh.getRange(x.row, EVENT_APP.ACTIVITY.AUTO_DUE).setValue(true);
       }
 
-      let state = 'IN ATTESA';
-      if (prevDone) {
-        const d = eventDayV14_(due);
-        state = !d || d <= today ? 'DA FARE' : 'IN ATTESA';
-      }
-      sh.getRange(x.row, 6).setValue(state);
+      const d = eventDayV14_(due);
+      sh.getRange(x.row, 6).setValue(d && d < today ? 'SCADUTO' : 'IN ATTESA');
     });
 
-    const meaningfulTasks = o.tasks.filter(function (x) { return String(x.v[2] || '').trim(); });
-    const done = meaningfulTasks.filter(function (x) { return Boolean(sh.getRange(x.row, 5).getValue()); }).length;
-    let state = meaningfulTasks.length && done === meaningfulTasks.length ? 'COMPLETATO' : (done ? 'IN CORSO' : 'DA AVVIARE');
-    const od = eventDayV14_(o.due);
-    if (state !== 'COMPLETATO' && od && od < today) state = 'IN RITARDO';
+    const meaningfulTasks = o.tasks.filter(function (x) {
+      return String(sh.getRange(x.row, 3).getDisplayValue() || '').trim();
+    });
+    const done = meaningfulTasks.filter(function (x) {
+      return Boolean(sh.getRange(x.row, 5).getValue());
+    }).length;
+
+    let state = 'DA AVVIARE';
+    if (meaningfulTasks.length && done === meaningfulTasks.length) state = 'COMPLETATO';
+    else if (done > 0) state = 'IN CORSO';
+
     sh.getRange(o.row, 6).setValue(state);
   });
 }
@@ -596,6 +630,8 @@ function eventPrepareBlankTaskRowV16_(sh, row, objectiveRow, step) {
   sh.getRange(row, 2).setNumberFormat('dd/MM/yyyy');
   sh.getRange(row, 4).setWrap(true);
   sh.getRange(row, 5).insertCheckboxes().setValue(false);
+  sh.getRange(row, 6).setValue('IN ATTESA');
+  eventApplyStatusValidationV16_(sh, row, 'TASK');
   sh.getRange(row, 1, 1, 6).setBackground('#ffffff').setFontWeight('normal');
 }
 
