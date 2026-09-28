@@ -150,14 +150,17 @@ function saveChecklistPanelDraft_(eventId, updates, newItems, deletedIds) {
   }
 
   const now = new Date();
+  const today = activityDayV14_(now);
   updates.forEach(u => {
     const r = byId[String(u.id || '')];
     if (!r) return;
     const old = rows[r - 1];
-    const status = normalize_(u.status) === 'FATTO' ? 'FATTO' : 'DA FARE';
+    const dueDate = parseClientDate_(u.dueDate) || '';
+    const dueDay = activityDayV14_(dueDate);
+    const status = normalize_(u.status) === 'FATTO' ? 'FATTO' : (dueDay && dueDay < today ? 'SCADUTO' : 'IN ATTESA');
     const completedAt = status === 'FATTO' ? (old[11] || now) : '';
     sheet.getRange(r, 6, 1, 8).setValues([[
-      parseClientDate_(u.dueDate) || '', status, old[7] || '', old[8] || '', old[9] || '',
+      dueDate, status, old[7] || '', old[8] || '', old[9] || '',
       u.note || '', completedAt, now
     ]]);
   });
@@ -169,11 +172,14 @@ function saveChecklistPanelDraft_(eventId, updates, newItems, deletedIds) {
     const task = String(item.task || '').trim();
     if (!task) return;
     maxOrder += 10;
+    const dueDate = parseClientDate_(item.dueDate) || '';
+    const dueDay = activityDayV14_(dueDate);
+    const done = normalize_(item.status) === 'FATTO';
+    const status = done ? 'FATTO' : (dueDay && dueDay < today ? 'SCADUTO' : 'IN ATTESA');
     addRows.push([
       'TASK-' + Utilities.getUuid(), eventId, maxOrder, task, 'PERSONALIZZATA',
-      parseClientDate_(item.dueDate) || '', normalize_(item.status) === 'FATTO' ? 'FATTO' : 'DA FARE',
-      '', 'PERSONALIZZATA', '', item.note || '',
-      normalize_(item.status) === 'FATTO' ? now : '', now
+      dueDate, status, '', 'PERSONALIZZATA', '', item.note || '',
+      done ? now : '', now
     ]);
   });
   if (addRows.length) sheet.getRange(sheet.getLastRow() + 1, 1, addRows.length, 13).setValues(addRows);
