@@ -26,10 +26,10 @@ function generateChecklistForEvent_(eventId,event){return ensureDefaultObjective
 function generateChecklistForSelectedEvent(){const event=selectedEvent_(),eventId=ensureEventId_(event),added=ensureDefaultObjectivesForEventV14_(eventId,event);SpreadsheetApp.getUi().alert('Attività evento',added?'Nuove attività create: '+added:'Tutti gli obiettivi previsti sono già presenti.',SpreadsheetApp.getUi().ButtonSet.OK);}
 
 function calendarObjectiveProgressText_(eventId){
-  return getActivityObjectivesForEventV14_(eventId).map(o=>{const symbol=o.status==='COMPLETATO'?'✓':o.status==='IN RITARDO'?'⚠':'•',boxes=o.tasks.map(t=>activityIsDoneV14_(t.status)?'☑':'☐').join('');return symbol+' '+o.name+(boxes?'  '+boxes:'');}).join('\n');
+  return getActivityObjectivesForEventV14_(eventId).map(o=>{const symbol=o.status==='COMPLETATO'?'✓':'•',boxes=o.tasks.map(t=>activityIsDoneV14_(t.status)?'☑':'☐').join('');return symbol+' '+o.name+(boxes?'  '+boxes:'');}).join('\n');
 }
 function calendarTasksNowText_(eventId){
-  syncChecklistLocksForEvent_(eventId);const names={};getActivityObjectivesForEventV14_(eventId).forEach(o=>names[o.id]=o.name);return getActivityTasksForEventV14_(eventId).filter(t=>normalize_(t.status)==='DA FARE').sort((a,b)=>Number(a.order||0)-Number(b.order||0)).map(t=>(names[t.objectiveId]?names[t.objectiveId]+' — ':'')+t.task).join('\n');
+  syncChecklistLocksForEvent_(eventId);const names={};getActivityObjectivesForEventV14_(eventId).forEach(o=>names[o.id]=o.name);return getActivityTasksForEventV14_(eventId).filter(t=>normalize_(t.status)==='SCADUTO').sort((a,b)=>Number(a.order||0)-Number(b.order||0)).map(t=>'⚠ '+(names[t.objectiveId]?names[t.objectiveId]+' — ':'')+t.task).join('\n');
 }
 function refreshCalendarActivityDashboardForEvent_(eventId){return refreshCalendarActivityDashboardV14_(eventId);}
 
