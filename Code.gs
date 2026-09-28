@@ -412,12 +412,14 @@ function eventEnsureTaskRowV14_(sh, row) {
   }
 
   const tasks = eventObjectiveTasksV14_(sh, oid).filter(function (x) { return x.row !== row; });
-  const same = tasks.filter(function (x) { return String(x.v[16] || '') === path; });
   let step = Number(sh.getRange(row, EVENT_APP.ACTIVITY.STEP_ORDER).getValue() || 0);
   if (!(step > 0)) {
     step = tasks.length ? Math.max.apply(null, tasks.map(function (x) { return Number(x.v[11] || 0); })) + 10 : 10;
     sh.getRange(row, EVENT_APP.ACTIVITY.STEP_ORDER).setValue(step);
   }
+  const same = tasks
+    .filter(function (x) { return String(x.v[16] || '') === path && Number(x.v[11] || 0) < step; })
+    .sort(function (a, b) { return Number(a.v[11] || 0) - Number(b.v[11] || 0); });
 
   const prev = same.length ? same[same.length - 1] : null;
   sh.getRange(row, EVENT_APP.ACTIVITY.PREVIOUS_ID).setValue(prev ? prev.v[9] : '');
