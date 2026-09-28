@@ -50,7 +50,7 @@ function getLinkedEventSheet_(event){
   if(!event||!event._row)return null;
   const cal=sh_(APP.SHEETS.CALENDAR),map=headerMap_(cal),col=map[APP.CALENDAR_HEADERS.EVENT_SHEET];
   if(!col)return null;
-  const cell=cal.getRange(event._row,col),rich=cell.getRichTextValue(),id=extractDriveId_((rich&&rich.getLinkUrl())||cell.getDisplayValue());
+  const cell=cal.getRange(event._row,col),rich=cell.getRichTextValue(),id=extractDriveId_((rich&&rich.getLinkUrl())||cell.getFormula()||cell.getDisplayValue());
   if(!id)return null;
   try{return SpreadsheetApp.openById(id);}catch(e){return null;}
 }
@@ -66,7 +66,7 @@ function writeEventMeta_(child,eventId,event,folderId){
     MASTER_SPREADSHEET_ID:APP.SPREADSHEET_ID,
     EVENT_FOLDER_ID:folderId,
     EVENT_SHEET_ID:child.getId(),
-    SYNC_VERSION:'11',
+    SYNC_VERSION:'15',
     EVENT_LABEL:buildEventSheetLabel_(event),
     EVENT_TYPE:String(event[APP.CALENDAR_HEADERS.TYPE]||''),
     EVENT_CLASS:String(event[APP.CALENDAR_HEADERS.CLASS]||''),
@@ -173,5 +173,5 @@ function writeMeta_(sheet,values){
 function validateEventSheetIdentity_(child,eventId){const meta=child&&child.getSheetByName(EVENT_SHEET.SHEETS.META);if(!meta)throw new Error('Foglio _META mancante.');const stored=String(readMetaValue_(meta,'EVENT_ID')||'').trim();if(stored&&stored!==String(eventId))throw new Error('La Scheda appartiene all evento '+stored+', non a '+eventId+'.');}
 function buildEventSheetName_(event){return['Scheda evento',event[APP.CALENDAR_HEADERS.TYPE]||'',event[APP.CALENDAR_HEADERS.CLASS]||'',event[APP.CALENDAR_HEADERS.LOCATION]||'',formatDocumentDateRange_(event[APP.CALENDAR_HEADERS.START],event[APP.CALENDAR_HEADERS.END])].filter(Boolean).join(' - ');}
 function buildEventSheetLabel_(event){return[event[APP.CALENDAR_HEADERS.TYPE]||'',event[APP.CALENDAR_HEADERS.CLASS]||'',event[APP.CALENDAR_HEADERS.LOCATION]||'',formatDocumentDateRange_(event[APP.CALENDAR_HEADERS.START],event[APP.CALENDAR_HEADERS.END])].filter(Boolean).join(' | ');}
-function setEventSheetLink_(row,url){const sheet=sh_(APP.SHEETS.CALENDAR),map=headerMap_(sheet),col=map[APP.CALENDAR_HEADERS.EVENT_SHEET];if(!col)throw new Error('Colonna SCHEDA EVENTO non trovata.');sheet.getRange(row,col).setRichTextValue(SpreadsheetApp.newRichTextValue().setText('↗ APRI').setLinkUrl(url).build());}
+function setEventSheetLink_(row,url){const sheet=sh_(APP.SHEETS.CALENDAR),map=headerMap_(sheet),col=map[APP.CALENDAR_HEADERS.EVENT_SHEET];if(!col)throw new Error('Colonna SCHEDA EVENTO non trovata.');const safe=String(url||'').replace(/\"/g,'\"\"');sheet.getRange(row,col).setFormula('=HYPERLINK(\"'+safe+'\";\"↗ APRI\")');}
 function replaceCentralRowsForEvent_(sheet,eventId,eventColumn,newRows,width){const values=sheet.getDataRange().getValues(),target=[];for(let i=1;i<values.length;i++)if(String(values[i][eventColumn-1]||'')===String(eventId))target.push(i+1);const reused=Math.min(target.length,newRows.length);for(let i=0;i<reused;i++)sheet.getRange(target[i],1,1,width).setValues([newRows[i]]);for(let i=reused;i<target.length;i++)sheet.getRange(target[i],1,1,width).clearContent();if(newRows.length>reused){const rest=newRows.slice(reused);sheet.getRange(sheet.getLastRow()+1,1,rest.length,width).setValues(rest);}}
