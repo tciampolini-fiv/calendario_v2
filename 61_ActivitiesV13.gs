@@ -1,12 +1,12 @@
 const ACTIVITY_V13=Object.freeze({VISIBLE:7,WIDTH:19,TYPE:8,OBJECTIVE_ID:9,TASK_ID:10,OBJECTIVE_ORDER:11,STEP_ORDER:12,COLOR:13,AUTO_DUE:14,PREVIOUS_ID:15,COMPLETED_AT:16,PATH:17,DUE_MODE:18,OFFSET:19});
 const EVENT_SHEET_SYNC_VERSION_V15='15';
-const EVENT_SHEET_V15_HEADERS=Object.freeze(['OBIETTIVO','SCADENZA OBIETTIVO','ATTIVITA','SCADENZA','FATTO','STATO','NOTE','TIPO RIGA','ID OBIETTIVO','ID TASK','ORDINE OBIETTIVO','ORDINE STEP','COLORE','SCADENZA AUTOMATICA','ID TASK PRECEDENTE','DATA COMPLETAMENTO','PERCORSO','MODALITA SCADENZA','OFFSET GIORNI']);
+const EVENT_SHEET_V15_HEADERS=Object.freeze(['OBIETTIVO','SCADENZA OBIETTIVO','ATTIVITA','SCADENZA','FATTO','STATO','NOTE','TIPO RIGA','ID OBIETTIVO','ID TASK','ORDINE OBIETTIVO','ORDINE STEP','COLORE','SCADENZA AUTOMATICA','ID TASK PRECEDENTE','DATA COMPLETAMENTO','PERCORSO','MODALITA SCADENZA','OFFSET GIORNI']);\nfunction normalizeHeaderV15_(value){return normalize_(value).normalize('NFD').replace(/[\\u0300-\\u036f]/g,'');}
 
 function getEventSheetSchemaV15_(child){
   if(!child)return{kind:'MISSING',version:''};
   const sh=child.getSheetByName(EVENT_SHEET.SHEETS.TASKS),meta=child.getSheetByName(EVENT_SHEET.SHEETS.META);
   if(!sh||!meta)return{kind:'LEGACY',version:''};
-  const headers=sh.getRange(1,1,1,ACTIVITY_V13.WIDTH).getDisplayValues()[0].map(normalize_);
+  const headers=sh.getRange(1,1,1,ACTIVITY_V13.WIDTH).getDisplayValues()[0].map(normalizeHeaderV15_);
   const exact=EVENT_SHEET_V15_HEADERS.every((h,i)=>headers[i]===h);
   const version=String(readMetaValue_(meta,'SYNC_VERSION')||'').trim();
   if(exact&&version===EVENT_SHEET_SYNC_VERSION_V15)return{kind:'V15',version:version};
@@ -58,7 +58,7 @@ function prepareEventSheetForSelectedEventV15(){
 function isObjectiveActivitySheetV13_(child){
   const sh=child&&child.getSheetByName(EVENT_SHEET.SHEETS.TASKS);
   if(!sh)return false;
-  const headers=sh.getRange(1,1,1,ACTIVITY_V13.WIDTH).getDisplayValues()[0].map(normalize_);
+  const headers=sh.getRange(1,1,1,ACTIVITY_V13.WIDTH).getDisplayValues()[0].map(normalizeHeaderV15_);
   return EVENT_SHEET_V15_HEADERS.every((h,i)=>headers[i]===h);
 }
 
