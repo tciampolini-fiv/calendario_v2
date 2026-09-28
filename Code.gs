@@ -536,6 +536,11 @@ function eventRefreshActivitiesV14_() {
     o.tasks.forEach(function (x) { if (x.v[9]) map[String(x.v[9])] = x; });
 
     o.tasks.forEach(function (x) {
+      const taskName = String(sh.getRange(x.row, 3).getDisplayValue() || '').trim();
+      if (!taskName) {
+        sh.getRange(x.row, 6).clearContent();
+        return;
+      }
       const checked = Boolean(sh.getRange(x.row, 5).getValue());
       if (checked) {
         sh.getRange(x.row, 6).setValue('FATTO');
