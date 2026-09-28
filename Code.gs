@@ -167,6 +167,9 @@ function eventRepairActivityLayoutV15_(sh, force) {
     sh.insertColumnsAfter(sh.getMaxColumns(), EVENT_APP.ACTIVITY.COLS - sh.getMaxColumns());
   }
 
+  sh.getRange(1, 1, 1, 7).setValues([[
+    'OBIETTIVO', 'SCADENZA', 'ATTIVITÀ', 'NOTE', 'FATTO', 'STATO', ''
+  ]]);
   sh.getRange(1, 8, 1, 12).setValues([[
     'TIPO RIGA', 'ID OBIETTIVO', 'ID TASK', 'ORDINE OBIETTIVO', 'ORDINE STEP', 'COLORE',
     'SCADENZA AUTOMATICA', 'ID TASK PRECEDENTE', 'DATA COMPLETAMENTO', 'PERCORSO',
@@ -184,14 +187,13 @@ function eventRepairActivityLayoutV15_(sh, force) {
   for (let row = 2; row <= maxRow; row++) {
     const a = String(sh.getRange(row, 1).getDisplayValue() || '').trim();
     const c = String(sh.getRange(row, 3).getDisplayValue() || '').trim();
-    let type = eventRowTypeV15_(sh, row);
+    const type = eventRowTypeV15_(sh, row);
 
     if (type === 'AGGIUNGI_OBIETTIVO') {
       actionRow = row;
       sh.getRange(row, 1).setValue('＋ AGGIUNGI OBIETTIVO');
       sh.getRange(row, EVENT_APP.ACTIVITY.TYPE).setValue('AGGIUNGI_OBIETTIVO');
       if (force) sh.getRange(row, 9, 1, 11).clearContent();
-      lastDataRow = Math.max(lastDataRow, row);
       continue;
     }
 
@@ -212,8 +214,9 @@ function eventRepairActivityLayoutV15_(sh, force) {
       if (!color) color = visibleColor && visibleColor !== '#ffffff' ? visibleColor : eventActivityPaletteV14_()[Math.max(0, Math.round(order / 10) - 1) % eventActivityPaletteV14_().length];
       sh.getRange(row, EVENT_APP.ACTIVITY.COLOR).setValue(color);
       sh.getRange(row, 3).setValue('＋').setHorizontalAlignment('center');
-      sh.getRange(row, 1, 1, 7).setBackground(color).setFontWeight('bold');
+      sh.getRange(row, 1, 1, 6).setBackground(color).setFontWeight('bold');
       sh.getRange(row, 2).setNumberFormat('dd/MM/yyyy');
+      sh.getRange(row, 4).setWrap(true);
 
       currentObjective = {
         row: row,
@@ -228,7 +231,7 @@ function eventRepairActivityLayoutV15_(sh, force) {
       continue;
     }
 
-    if ((type === 'TASK' || c) && currentObjective && c && c.indexOf('＋') < 0) {
+    if ((type === 'TASK' || (c && c.indexOf('＋') < 0)) && currentObjective) {
       sh.getRange(row, EVENT_APP.ACTIVITY.TYPE).setValue('TASK');
       sh.getRange(row, EVENT_APP.ACTIVITY.OBJECTIVE_ID).setValue(currentObjective.id);
       if (!sh.getRange(row, EVENT_APP.ACTIVITY.TASK_ID).getValue()) {
@@ -245,18 +248,18 @@ function eventRepairActivityLayoutV15_(sh, force) {
       nextStep = Math.max(nextStep, step + 10);
 
       let path = String(sh.getRange(row, EVENT_APP.ACTIVITY.PATH).getDisplayValue() || '').trim();
-      if (!path) {
+      if (!path && c) {
         path = eventInferPathV15_(currentObjective.name, c);
         sh.getRange(row, EVENT_APP.ACTIVITY.PATH).setValue(path);
       }
 
       const taskId = String(sh.getRange(row, EVENT_APP.ACTIVITY.TASK_ID).getValue() || '');
       let previousId = String(sh.getRange(row, EVENT_APP.ACTIVITY.PREVIOUS_ID).getDisplayValue() || '').trim();
-      if (!previousId && pathLastTask[path]) {
+      if (!previousId && path && pathLastTask[path]) {
         previousId = pathLastTask[path];
         sh.getRange(row, EVENT_APP.ACTIVITY.PREVIOUS_ID).setValue(previousId);
       }
-      pathLastTask[path] = taskId;
+      if (path) pathLastTask[path] = taskId;
 
       let mode = eventNormalizeTextV7_(sh.getRange(row, EVENT_APP.ACTIVITY.DUE_MODE).getDisplayValue());
       if (!mode) {
@@ -267,33 +270,72 @@ function eventRepairActivityLayoutV15_(sh, force) {
         sh.getRange(row, EVENT_APP.ACTIVITY.OFFSET).setValue(previousId ? 2 : 0);
       }
 
-      sh.getRange(row, 4).setNumberFormat('dd/MM/yyyy');
+      sh.getRange(row, 2).setNumberFormat('dd/MM/yyyy');
+      sh.getRange(row, 4).setWrap(true);
       sh.getRange(row, EVENT_APP.ACTIVITY.COMPLETED_AT).setNumberFormat('dd/MM/yyyy HH:mm');
       const done = sh.getRange(row, 5).getValue() === true;
       sh.getRange(row, 5).insertCheckboxes().setValue(done);
-      sh.getRange(row, 1, 1, 7).setBackground('#ffffff').setFontWeight('normal');
+      sh.getRange(row, 1, 1, 6).setBackground('#ffffff').setFontWeight('normal');
       lastDataRow = Math.max(lastDataRow, row);
       continue;
     }
   }
 
   if (!actionRow) {
-    actionRow = Math.min(Math.max(lastDataRow + 1, 2), EVENT_APP.ACTIVITY.MAX);
-    if (String(sh.getRange(actionRow, 1, 1, EVENT_APP.ACTIVITY.COLS).getDisplayValues()[0].join('')).trim()) {
-      sh.insertRowAfter(lastDataRow);
-      actionRow = lastDataRow + 1;
+    const separator = Math.min(Math.max(lastDataRow + 1, 2), EVENT_APP.ACTIVITY.MAX - 1);
+    const action = separator + 1;
+    sh.getRange(separator, 1, 2, EVENT_APP.ACTIVITY.COLS).clearContent().clearDataValidations();
+    sh.getRange(action, 1).setValue('＋ AGGIUNGI OBIETTIVO');
+    sh.getRange(action, EVENT_APP.ACTIVITY.TYPE).setValue('AGGIUNGI_OBIETTIVO');
+    actionRow = action;
+  } else {
+    const separator = actionRow - 1;
+    if (separator < 2 || String(sh.getRange(separator, 1, 1, EVENT_APP.ACTIVITY.COLS).getDisplayValues()[0].join('')).trim()) {
+      sh.insertRowBefore(actionRow);
+      actionRow++;
     }
-    sh.getRange(actionRow, 1, 1, EVENT_APP.ACTIVITY.COLS).clearContent().clearDataValidations();
-    sh.getRange(actionRow, 1).setValue('＋ AGGIUNGI OBIETTIVO');
-    sh.getRange(actionRow, EVENT_APP.ACTIVITY.TYPE).setValue('AGGIUNGI_OBIETTIVO');
+    sh.getRange(actionRow - 1, 1, 1, EVENT_APP.ACTIVITY.COLS).clearContent().clearDataValidations();
   }
 
+  sh.getRange(actionRow, 1, 1, EVENT_APP.ACTIVITY.COLS).clearDataValidations();
   sh.getRange(actionRow, 1).setValue('＋ AGGIUNGI OBIETTIVO').setFontWeight('bold');
   sh.getRange(actionRow, EVENT_APP.ACTIVITY.TYPE).setValue('AGGIUNGI_OBIETTIVO');
   sh.getRange(actionRow, 9, 1, 11).clearContent();
+
   sh.getRange(2, 2, Math.max(1, actionRow - 1), 1).setNumberFormat('dd/MM/yyyy');
-  sh.getRange(2, 4, Math.max(1, actionRow - 1), 1).setNumberFormat('dd/MM/yyyy');
-  try { sh.hideColumns(8, 12); } catch (err) { console.log('Nascondi colonne tecniche: ' + err.message); }
+  sh.getRange(2, 4, Math.max(1, actionRow - 1), 1).setWrap(true);
+  sh.setColumnWidth(4, 320);
+  try { sh.hideColumns(7, 13); } catch (err) { console.log('Nascondi colonne tecniche: ' + err.message); }
+  eventRebuildActivityGroupsV16_(sh, actionRow);
+}
+
+function eventRebuildActivityGroupsV16_(sh, actionRow) {
+  try {
+    const end = Math.min(actionRow - 1, EVENT_APP.ACTIVITY.MAX);
+    for (let r = 2; r <= end; r++) {
+      const g = sh.getRowGroup(r, 1);
+      if (g) g.remove();
+    }
+    let first = 0, count = 0;
+    const flush = function () {
+      if (first && count) {
+        try { sh.getRange(first, 1, count, 1).shiftRowGroupDepth(1); } catch (err) {}
+      }
+      first = 0; count = 0;
+    };
+    for (let r = 2; r <= end; r++) {
+      const type = eventRowTypeV15_(sh, r);
+      if (type === 'TASK') {
+        if (!first) first = r;
+        count++;
+      } else {
+        flush();
+      }
+    }
+    flush();
+  } catch (err) {
+    console.log('Raggruppamento attività: ' + err.message);
+  }
 }
 
 function eventObjectiveTasksV14_(sh, oid) {
@@ -345,7 +387,8 @@ function eventEnsureObjectiveRowV14_(sh, row) {
   }
   sh.getRange(row, EVENT_APP.ACTIVITY.COLOR).setValue(color);
   sh.getRange(row, 3).setValue('＋').setHorizontalAlignment('center');
-  sh.getRange(row, 1, 1, 7).setBackground(color).setFontWeight('bold');
+  sh.getRange(row, 1, 1, 6).setBackground(color).setFontWeight('bold');
+  sh.getRange(row, 4).setWrap(true);
 }
 
 function eventEnsureTaskRowV14_(sh, row) {
@@ -362,13 +405,14 @@ function eventEnsureTaskRowV14_(sh, row) {
   if (!sh.getRange(row, EVENT_APP.ACTIVITY.TASK_ID).getValue()) sh.getRange(row, EVENT_APP.ACTIVITY.TASK_ID).setValue('TASK-' + Utilities.getUuid());
   sh.getRange(row, EVENT_APP.ACTIVITY.OBJECTIVE_ORDER).setValue(sh.getRange(header, EVENT_APP.ACTIVITY.OBJECTIVE_ORDER).getValue());
 
-  if (!sh.getRange(row, EVENT_APP.ACTIVITY.PATH).getValue()) {
-    sh.getRange(row, EVENT_APP.ACTIVITY.PATH).setValue(eventInferPathV15_(sh.getRange(header, 1).getDisplayValue(), task));
+  let path = String(sh.getRange(row, EVENT_APP.ACTIVITY.PATH).getValue() || '').trim();
+  if (!path || path === 'MANUALE') {
+    path = eventInferPathV15_(sh.getRange(header, 1).getDisplayValue(), task);
+    sh.getRange(row, EVENT_APP.ACTIVITY.PATH).setValue(path);
   }
 
   const tasks = eventObjectiveTasksV14_(sh, oid).filter(function (x) { return x.row !== row; });
-  const path = String(sh.getRange(row, EVENT_APP.ACTIVITY.PATH).getValue() || 'MANUALE');
-  const same = tasks.filter(function (x) { return String(x.v[16] || 'MANUALE') === path; });
+  const same = tasks.filter(function (x) { return String(x.v[16] || '') === path; });
   let step = Number(sh.getRange(row, EVENT_APP.ACTIVITY.STEP_ORDER).getValue() || 0);
   if (!(step > 0)) {
     step = tasks.length ? Math.max.apply(null, tasks.map(function (x) { return Number(x.v[11] || 0); })) + 10 : 10;
@@ -385,6 +429,8 @@ function eventEnsureTaskRowV14_(sh, row) {
     sh.getRange(row, EVENT_APP.ACTIVITY.OFFSET).setValue(0);
   }
 
+  sh.getRange(row, 2).setNumberFormat('dd/MM/yyyy');
+  sh.getRange(row, 4).setWrap(true);
   const done = sh.getRange(row, 5).getValue() === true;
   sh.getRange(row, 5).insertCheckboxes().setValue(done);
 }
@@ -406,7 +452,7 @@ function eventHandleActivitiesEditV14_(e) {
 
   if (type === 'TASK') {
     if (col === 3) eventEnsureTaskRowV14_(sh, row);
-    if (col === 4) {
+    if (col === 2) {
       sh.getRange(row, EVENT_APP.ACTIVITY.AUTO_DUE).setValue(false);
       sh.getRange(row, EVENT_APP.ACTIVITY.DUE_MODE).setValue('MANUAL');
       sh.getRange(row, EVENT_APP.ACTIVITY.OFFSET).setValue(0);
@@ -452,16 +498,16 @@ function eventToggleTaskV14_(sh, row, checked) {
     sh.getRange(row, 6).setValue('FATTO');
     sh.getRange(row, EVENT_APP.ACTIVITY.COMPLETED_AT).setValue(now).setNumberFormat('dd/MM/yyyy HH:mm');
     const next = descendants[0];
-    if (next && !(next.v[3] instanceof Date) && eventNormalizeTextV7_(next.v[17]) === 'PRECEDENTE') {
+    if (next && !(next.v[1] instanceof Date) && eventNormalizeTextV7_(next.v[17]) === 'PRECEDENTE') {
       const due = eventAddDaysV14_(now, Number(next.v[18] || 2));
-      sh.getRange(next.row, 4).setValue(due).setNumberFormat('dd/MM/yyyy');
+      sh.getRange(next.row, 2).setValue(due).setNumberFormat('dd/MM/yyyy');
       sh.getRange(next.row, EVENT_APP.ACTIVITY.AUTO_DUE).setValue(true);
     }
   } else {
     sh.getRange(row, EVENT_APP.ACTIVITY.COMPLETED_AT).clearContent();
     descendants.forEach(function (x) {
       if (x.v[13] === true && eventNormalizeTextV7_(x.v[17]) === 'PRECEDENTE') {
-        sh.getRange(x.row, 4).clearContent();
+        sh.getRange(x.row, 2).clearContent();
         sh.getRange(x.row, EVENT_APP.ACTIVITY.AUTO_DUE).setValue(false);
       }
     });
@@ -499,14 +545,14 @@ function eventRefreshActivitiesV14_() {
       const previousId = String(x.v[14] || '');
       const prev = previousId ? map[previousId] : null;
       const prevDone = !prev || Boolean(sh.getRange(prev.row, 5).getValue());
-      let due = sh.getRange(x.row, 4).getValue();
+      let due = sh.getRange(x.row, 2).getValue();
       const mode = eventNormalizeTextV7_(x.v[17] || '');
       const offset = Number(x.v[18] || 2);
 
       if (prevDone && !(due instanceof Date) && mode === 'PRECEDENTE' && prev) {
         const completed = prev.v[15] instanceof Date ? prev.v[15] : new Date();
         due = eventAddDaysV14_(completed, offset);
-        sh.getRange(x.row, 4).setValue(due).setNumberFormat('dd/MM/yyyy');
+        sh.getRange(x.row, 2).setValue(due).setNumberFormat('dd/MM/yyyy');
         sh.getRange(x.row, EVENT_APP.ACTIVITY.AUTO_DUE).setValue(true);
       }
 
@@ -518,25 +564,59 @@ function eventRefreshActivitiesV14_() {
       sh.getRange(x.row, 6).setValue(state);
     });
 
-    const done = o.tasks.filter(function (x) { return Boolean(sh.getRange(x.row, 5).getValue()); }).length;
-    let state = o.tasks.length && done === o.tasks.length ? 'COMPLETATO' : (done ? 'IN CORSO' : 'DA AVVIARE');
+    const meaningfulTasks = o.tasks.filter(function (x) { return String(x.v[2] || '').trim(); });
+    const done = meaningfulTasks.filter(function (x) { return Boolean(sh.getRange(x.row, 5).getValue()); }).length;
+    let state = meaningfulTasks.length && done === meaningfulTasks.length ? 'COMPLETATO' : (done ? 'IN CORSO' : 'DA AVVIARE');
     const od = eventDayV14_(o.due);
     if (state !== 'COMPLETATO' && od && od < today) state = 'IN RITARDO';
     sh.getRange(o.row, 6).setValue(state);
   });
 }
 
-function eventInsertObjectiveV14_(sh, actionRow) {
-  sh.insertRowBefore(actionRow);
-  const row = actionRow;
+function eventPrepareBlankTaskRowV16_(sh, row, objectiveRow, step) {
+  const oid = String(sh.getRange(objectiveRow, EVENT_APP.ACTIVITY.OBJECTIVE_ID).getValue() || '');
+  const order = Number(sh.getRange(objectiveRow, EVENT_APP.ACTIVITY.OBJECTIVE_ORDER).getValue() || 10);
+  const color = String(sh.getRange(objectiveRow, EVENT_APP.ACTIVITY.COLOR).getDisplayValue() || '#D9EAF7');
   sh.getRange(row, 1, 1, EVENT_APP.ACTIVITY.COLS).clearContent().clearDataValidations();
-  sh.getRange(row, 1, 1, 7).setBackground('#ffffff').setFontWeight('normal');
-  sh.getRange(row, 1).setValue('Nuovo obiettivo');
-  sh.getRange(row, 3).setValue('＋');
-  sh.getRange(row, EVENT_APP.ACTIVITY.TYPE).setValue('OBIETTIVO');
-  eventEnsureObjectiveRowV14_(sh, row);
+  sh.getRange(row, EVENT_APP.ACTIVITY.TYPE).setValue('TASK');
+  sh.getRange(row, EVENT_APP.ACTIVITY.OBJECTIVE_ID).setValue(oid);
+  sh.getRange(row, EVENT_APP.ACTIVITY.TASK_ID).setValue('TASK-' + Utilities.getUuid());
+  sh.getRange(row, EVENT_APP.ACTIVITY.OBJECTIVE_ORDER).setValue(order);
+  sh.getRange(row, EVENT_APP.ACTIVITY.STEP_ORDER).setValue(step);
+  sh.getRange(row, EVENT_APP.ACTIVITY.COLOR).setValue(color);
+  sh.getRange(row, EVENT_APP.ACTIVITY.DUE_MODE).setValue('MANUAL');
+  sh.getRange(row, EVENT_APP.ACTIVITY.OFFSET).setValue(0);
+  sh.getRange(row, 2).setNumberFormat('dd/MM/yyyy');
+  sh.getRange(row, 4).setWrap(true);
+  sh.getRange(row, 5).insertCheckboxes().setValue(false);
+  sh.getRange(row, 1, 1, 6).setBackground('#ffffff').setFontWeight('normal');
+}
+
+function eventInsertObjectiveV14_(sh, actionRow) {
+  let separator = actionRow - 1;
+  if (separator < 2 || String(sh.getRange(separator, 1, 1, EVENT_APP.ACTIVITY.COLS).getDisplayValues()[0].join('')).trim()) {
+    sh.insertRowBefore(actionRow);
+    actionRow++;
+    separator = actionRow - 1;
+  }
+
+  sh.insertRowsBefore(separator, 3);
+  const objectiveRow = separator;
+  const taskRow1 = separator + 1;
+  const taskRow2 = separator + 2;
+
+  sh.getRange(objectiveRow, 1, 1, EVENT_APP.ACTIVITY.COLS).clearContent().clearDataValidations();
+  sh.getRange(objectiveRow, 1).setValue('Nuovo obiettivo');
+  sh.getRange(objectiveRow, 3).setValue('＋');
+  sh.getRange(objectiveRow, EVENT_APP.ACTIVITY.TYPE).setValue('OBIETTIVO');
+  eventEnsureObjectiveRowV14_(sh, objectiveRow);
+
+  eventPrepareBlankTaskRowV16_(sh, taskRow1, objectiveRow, 10);
+  eventPrepareBlankTaskRowV16_(sh, taskRow2, objectiveRow, 20);
+
   eventRepairActivityLayoutV15_(sh, false);
-  sh.setActiveRange(sh.getRange(row, 1));
+  eventRefreshActivitiesV14_();
+  sh.setActiveRange(sh.getRange(objectiveRow, 1));
 }
 
 function eventInsertTaskV14_(sh, headerRow) {
@@ -548,11 +628,10 @@ function eventInsertTaskV14_(sh, headerRow) {
 
   const row = insertAfter + 1;
   sh.getRange(row, 1, 1, EVENT_APP.ACTIVITY.COLS).clearContent().clearDataValidations();
-  sh.getRange(row, 1, 1, 7).setBackground('#ffffff').setFontWeight('normal');
+  sh.getRange(row, 1, 1, 6).setBackground('#ffffff').setFontWeight('normal');
   sh.getRange(row, 3).setValue('Nuova attività');
   sh.getRange(row, EVENT_APP.ACTIVITY.TYPE).setValue('TASK');
   sh.getRange(row, EVENT_APP.ACTIVITY.OBJECTIVE_ID).setValue(oid);
-  sh.getRange(row, EVENT_APP.ACTIVITY.PATH).setValue('MANUALE');
   eventEnsureTaskRowV14_(sh, row);
   eventRepairActivityLayoutV15_(sh, false);
   eventRefreshActivitiesV14_();
