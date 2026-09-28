@@ -50,8 +50,7 @@ function getActivityObjectivesForEventV14_(eventId){
     .map(r=>{
       const list=(byObjective[r[0]]||[]).sort((a,b)=>Number(a.stepOrder||a.order||0)-Number(b.stepOrder||b.order||0));
       const done=list.filter(t=>activityIsDoneV14_(t.status)).length,total=list.length;
-      let status=total&&done===total?'COMPLETATO':(done?'IN CORSO':'DA AVVIARE');
-      const due=activityDayV14_(r[4]);if(status!=='COMPLETATO'&&due&&due<today)status='IN RITARDO';
+      const status=total&&done===total?'COMPLETATO':(done?'IN CORSO':'DA AVVIARE');
       return {id:r[0],eventId:r[1],name:r[2],color:r[3],dueDate:r[4],order:r[5],source:r[6],templateKey:r[7],notes:r[8],createdAt:r[9],updatedAt:r[10],status:status,done:done,total:total,tasks:list};
     }).sort((a,b)=>Number(a.order||0)-Number(b.order||0));
 }
@@ -179,7 +178,7 @@ function ensureDefaultObjectivesForEventV14_(eventId,event){
         backend.checklist.getRange(match.row,10).setValue(cfg.autoKey);backend.checklist.getRange(match.row,17,1,7).setValues([[oid,cfg.step,!hasDue&&!!dueValue,previous,cfg.path,cfg.dueMode,cfg.offset]]);
         prevByPath[cfg.path]=String(r[0]);
       }else{
-        const id='TASK-'+Utilities.getUuid(),taskDue=activityTaskDueV14_(event,cfg.dueMode,cfg.offset),today=activityDayV14_(new Date()),dueDay=activityDayV14_(taskDue),status=previous?'IN ATTESA':(!dueDay||dueDay<=today?'DA FARE':'IN ATTESA');
+        const id='TASK-'+Utilities.getUuid(),taskDue=activityTaskDueV14_(event,cfg.dueMode,cfg.offset),today=activityDayV14_(new Date()),dueDay=activityDayV14_(taskDue),status=dueDay&&dueDay<today?'SCADUTO':'IN ATTESA';
         backend.checklist.appendRow([id,eventId,spec.order*100+cfg.step,cfg.task,activityTaskCategoryV14_(cfg.task),taskDue,status,'','STANDARD',cfg.autoKey,cfg.note||'','',now,'',previous,previous?'DIPENDENZA':'',oid,cfg.step,!!taskDue,previous,cfg.path,cfg.dueMode,cfg.offset]);
         prevByPath[cfg.path]=id;added++;
       }
@@ -205,14 +204,15 @@ function syncActivityStatesForEventV14_(eventId,event){
       if(done)return;
       if(!prevDone){
         if(mode==='PRECEDENTE'&&auto&&due instanceof Date){b.checklist.getRange(item.row,6).clearContent();b.checklist.getRange(item.row,19).setValue(false);due='';auto=false;}
-        if(normalize_(r[6])!=='IN ATTESA')b.checklist.getRange(item.row,7).setValue('IN ATTESA');return;
+        const blockedDue=activityDayV14_(due),blockedStatus=blockedDue&&blockedDue<today?'SCADUTO':'IN ATTESA';
+        if(normalize_(r[6])!==blockedStatus)b.checklist.getRange(item.row,7).setValue(blockedStatus);return;
       }
       if(!(due instanceof Date)){
         if(mode==='PRECEDENTE'&&prev){const base=prev.v[11] instanceof Date?prev.v[11]:now;due=activityAddDaysV14_(base,offset);auto=true;}
         else{due=activityTaskDueV14_(event,mode,offset);auto=!!due;}
         if(due){b.checklist.getRange(item.row,6).setValue(due).setNumberFormat('dd/MM/yyyy');b.checklist.getRange(item.row,19).setValue(auto);}
       }
-      const dueDay=activityDayV14_(due),desired=!dueDay||dueDay<=today?'DA FARE':'IN ATTESA';
+      const dueDay=activityDayV14_(due),desired=dueDay&&dueDay<today?'SCADUTO':'IN ATTESA';
       if(normalize_(r[6])!==desired){b.checklist.getRange(item.row,7).setValue(desired);b.checklist.getRange(item.row,13).setValue(now);}
     });
   });
@@ -221,8 +221,8 @@ function syncActivityStatesForEventV14_(eventId,event){
 function refreshCalendarActivityDashboardV14_(eventId){
   syncActivityStatesForEventV14_(eventId);const found=findCalendarEventById_(eventId);if(!found)return;
   const sheet=sh_(APP.SHEETS.CALENDAR),map=headerMap_(sheet),objectives=getActivityObjectivesForEventV14_(eventId);
-  const progress=objectives.map(o=>{const symbol=o.status==='COMPLETATO'?'✓':o.status==='IN RITARDO'?'⚠':'•',boxes=o.tasks.map(t=>activityIsDoneV14_(t.status)?'☑':'☐').join('');return symbol+' '+o.name+(boxes?'  '+boxes:'');}).join('\n');
-  const actions=[];objectives.forEach(o=>o.tasks.filter(t=>normalize_(t.status)==='DA FARE').forEach(t=>actions.push(o.name+' — '+t.task)));
+  const progress=objectives.map(o=>{const symbol=o.status==='COMPLETATO'?'✓':'•',boxes=o.tasks.map(t=>activityIsDoneV14_(t.status)?'☑':'☐').join('');return symbol+' '+o.name+(boxes?'  '+boxes:'');}).join('\n');
+  const actions=[];objectives.forEach(o=>o.tasks.filter(t=>normalize_(t.status)==='SCADUTO').forEach(t=>actions.push('⚠ '+o.name+' — '+t.task)));
   if(map[APP.CALENDAR_HEADERS.CHECKLIST])sheet.getRange(found.row,map[APP.CALENDAR_HEADERS.CHECKLIST]).setValue(progress).setWrap(true).setVerticalAlignment('top');
   if(map[APP.CALENDAR_HEADERS.NEXT_ACTION])sheet.getRange(found.row,map[APP.CALENDAR_HEADERS.NEXT_ACTION]).setValue(actions.join('\n')).setWrap(true).setVerticalAlignment('top');
 }
