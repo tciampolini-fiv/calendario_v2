@@ -95,6 +95,8 @@ function writeObjectivesToEventSheetV13_(eventId,child){
   const sheet=child.getSheetByName(EVENT_SHEET.SHEETS.TASKS);
   if(!sheet)throw new Error('Foglio Attività non trovato.');
   const objectives=getActivityObjectivesForEventV14_(eventId),rows=[];
+  const objectiveStatusRule=SpreadsheetApp.newDataValidation().requireValueInList(['DA AVVIARE','IN CORSO','COMPLETATO'],true).setAllowInvalid(false).build();
+  const taskStatusRule=SpreadsheetApp.newDataValidation().requireValueInList(['IN ATTESA','SCADUTO','FATTO'],true).setAllowInvalid(false).build();
 
   objectives.forEach(o=>{
     rows.push([o.name,o.dueDate||'','＋',o.note||'','',o.status,'','OBIETTIVO',o.id,'',o.order||'','',o.color||'#D9EAF7',false,'','CUSTOM','','','']);
@@ -118,10 +120,12 @@ function writeObjectivesToEventSheetV13_(eventId,child){
     const headerRow=idx+2;
     sheet.getRange(headerRow,1,1,6).setBackground(o.color||'#D9EAF7').setFontWeight('bold');
     sheet.getRange(headerRow,3).setHorizontalAlignment('center').setFontWeight('bold');
+    sheet.getRange(headerRow,6).setDataValidation(objectiveStatusRule);
     const count=o.tasks.length;
     if(count){
       const first=headerRow+1;
       sheet.getRange(first,5,count,1).insertCheckboxes();
+      sheet.getRange(first,6,count,1).setDataValidation(taskStatusRule);
       try{sheet.getRange(first,1,count,1).shiftRowGroupDepth(1);}catch(e){console.log('Gruppo righe: '+e.message);}
     }
   });
