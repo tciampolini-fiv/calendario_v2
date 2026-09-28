@@ -91,6 +91,12 @@ function syncAllEventSheetsToCalendarV15(){
   SpreadsheetApp.getUi().alert('Sincronizzazione Schede evento','Schede nuove sincronizzate: '+synced+'\nSchede vecchie ignorate: '+legacy+'\nSchede assenti: '+missing,SpreadsheetApp.getUi().ButtonSet.OK);
 }
 function clearActivityRowGroupsV13_(sheet){try{for(let r=2;r<=Math.min(500,sheet.getMaxRows());r++){const g=sheet.getRowGroup(r,1);if(g)g.remove();}}catch(e){console.log('Pulizia gruppi righe: '+e.message);}}
+function activitySheetTaskStatusV16_(task){
+  if(activityIsDoneV14_(task&&task.status))return 'FATTO';
+  const due=activityDayV14_(task&&task.dueDate),today=activityDayV14_(new Date());
+  return due&&due<today?'SCADUTO':'IN ATTESA';
+}
+
 function writeObjectivesToEventSheetV13_(eventId,child){
   const sheet=child.getSheetByName(EVENT_SHEET.SHEETS.TASKS);
   if(!sheet)throw new Error('Foglio Attività non trovato.');
@@ -100,7 +106,7 @@ function writeObjectivesToEventSheetV13_(eventId,child){
 
   objectives.forEach(o=>{
     rows.push([o.name,o.dueDate||'','＋',o.note||'','',o.status,'','OBIETTIVO',o.id,'',o.order||'','',o.color||'#D9EAF7',false,'','CUSTOM','','','']);
-    o.tasks.forEach(t=>rows.push(['',t.dueDate||'',t.task||'',t.note||'',activityIsDoneV14_(t.status),t.status||'IN ATTESA','','TASK',o.id,t.id||'',o.order||'',t.stepOrder||'',o.color||'',t.autoDue===true,t.previousTaskId||t.dependencyId||'',t.completedAt||'',t.path||'MANUALE',t.dueMode||'',t.offsetDays===''?'':t.offsetDays]));
+    o.tasks.forEach(t=>rows.push(['',t.dueDate||'',t.task||'',t.note||'',activityIsDoneV14_(t.status),activitySheetTaskStatusV16_(t),'','TASK',o.id,t.id||'',o.order||'',t.stepOrder||'',o.color||'',t.autoDue===true,t.previousTaskId||t.dependencyId||'',t.completedAt||'',t.path||'MANUALE',t.dueMode||'',t.offsetDays===''?'':t.offsetDays]));
   });
   rows.push(['','','','','','','','','','','','','','','','','','','']);
   rows.push(['＋ AGGIUNGI OBIETTIVO','','','','','','','AGGIUNGI_OBIETTIVO','','','','','','','','','','','']);
@@ -144,6 +150,6 @@ function syncObjectiveEventSheetV13_(child,eventId){
   validateEventSheetIdentity_(child,eventId);const local=child.getSheetByName(EVENT_SHEET.SHEETS.TASKS);if(!local||!isObjectiveActivitySheetV13_(child))throw new Error('La Scheda non usa il layout Obiettivi.');const b=ensureActivityBackendV14_(),oldObjs=b.objectives.getDataRange().getValues(),oldTasks=b.checklist.getDataRange().getValues(),objById={},taskById={};oldObjs.slice(1).forEach(r=>{if(String(r[1])===String(eventId)&&r[0])objById[String(r[0])]=r;});oldTasks.slice(1).forEach(r=>{if(String(r[1])===String(eventId)&&r[0])taskById[String(r[0])]=r;});
   const last=Math.min(500,Math.max(local.getLastRow(),2)),values=local.getRange(2,1,last-1,ACTIVITY_V13.WIDTH).getValues(),now=new Date(),objs=[],tasks=[],validObjectives={};
   values.forEach((r,i)=>{if(normalize_(r[7])!=='OBIETTIVO'||!String(r[0]||'').trim())return;let id=String(r[8]||'').trim();if(!id){id='OBJ-'+Utilities.getUuid();local.getRange(i+2,9).setValue(id);}const old=objById[id]||[],visibleColor=local.getRange(i+2,1).getBackground(),color=visibleColor&&visibleColor!=='#ffffff'?visibleColor:String(r[12]||old[3]||activityColorV14_(objs.length));objs.push([id,eventId,String(r[0]).trim(),color,r[1] instanceof Date?r[1]:'',Number(r[10]||old[5]||((objs.length+1)*10)),old[6]||'SCHEDA EVENTO',old[7]||('CUSTOM:'+normalize_(r[0])),String(r[3]||old[8]||'').trim(),old[9]||now,now]);validObjectives[id]=true;local.getRange(i+2,13).setValue(color);});
-  values.forEach((r,i)=>{if(normalize_(r[7])!=='TASK'||!String(r[2]||'').trim()||!validObjectives[String(r[8]||'')])return;let id=String(r[9]||'').trim();if(!id){id='TASK-'+Utilities.getUuid();local.getRange(i+2,10).setValue(id);}const old=taskById[id]||[],done=r[4]===true,status=done?'FATTO':(normalize_(r[5])||'IN ATTESA'),oid=String(r[8]),step=Number(r[11]||10),objOrder=Number(r[10]||10),prev=String(r[14]||'').trim(),completed=done?(r[15] instanceof Date?r[15]:(old[11] instanceof Date?old[11]:now)):'',path=String(r[16]||old[20]||'MANUALE').trim()||'MANUALE',mode=normalize_(r[17]||old[21]||'MANUAL'),offset=r[18]!==''?Number(r[18]):(old[22]!==''?Number(old[22]):2);tasks.push([id,eventId,objOrder*100+step,String(r[2]).trim(),old[4]||activityTaskCategoryV14_(r[2]),r[1] instanceof Date?r[1]:'',status,old[7]||'',old[8]||'SCHEDA EVENTO',old[9]||'',String(r[3]||'').trim(),completed,now,old[13]||tasks.length+1,prev,prev&&status!=='FATTO'?'DIPENDENZA':'',oid,step,r[13]===true,prev,path,mode,offset]);});
+  values.forEach((r,i)=>{if(normalize_(r[7])!=='TASK'||!String(r[2]||'').trim()||!validObjectives[String(r[8]||'')])return;let id=String(r[9]||'').trim();if(!id){id='TASK-'+Utilities.getUuid();local.getRange(i+2,10).setValue(id);}const old=taskById[id]||[],done=r[4]===true,dueDay=activityDayV14_(r[1]),today=activityDayV14_(new Date()),status=done?'FATTO':(dueDay&&dueDay<today?'SCADUTO':'IN ATTESA'),oid=String(r[8]),step=Number(r[11]||10),objOrder=Number(r[10]||10),prev=String(r[14]||'').trim(),completed=done?(r[15] instanceof Date?r[15]:(old[11] instanceof Date?old[11]:now)):'',path=String(r[16]||old[20]||'MANUALE').trim()||'MANUALE',mode=normalize_(r[17]||old[21]||'MANUAL'),offset=r[18]!==''?Number(r[18]):(old[22]!==''?Number(old[22]):2);tasks.push([id,eventId,objOrder*100+step,String(r[2]).trim(),old[4]||activityTaskCategoryV14_(r[2]),r[1] instanceof Date?r[1]:'',status,old[7]||'',old[8]||'SCHEDA EVENTO',old[9]||'',String(r[3]||'').trim(),completed,now,old[13]||tasks.length+1,prev,prev&&status!=='FATTO'?'DIPENDENZA':'',oid,step,r[13]===true,prev,path,mode,offset]);});
   replaceCentralRowsForEvent_(b.objectives,eventId,2,objs,11);replaceCentralRowsForEvent_(b.checklist,eventId,2,tasks,23);const found=findCalendarEventById_(eventId);syncActivityStatesForEventV14_(eventId,found&&found.event);refreshCalendarActivityDashboardV14_(eventId);SpreadsheetApp.flush();return{objectives:objs.length,tasks:tasks.length};
 }
