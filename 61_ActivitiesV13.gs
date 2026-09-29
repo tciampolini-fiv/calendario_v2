@@ -90,7 +90,15 @@ function syncAllEventSheetsToCalendarV15(){
   }
   SpreadsheetApp.getUi().alert('Sincronizzazione Schede evento','Schede nuove sincronizzate: '+synced+'\nSchede vecchie ignorate: '+legacy+'\nSchede assenti: '+missing,SpreadsheetApp.getUi().ButtonSet.OK);
 }
-function clearActivityRowGroupsV13_(sheet){try{for(let r=2;r<=Math.min(500,sheet.getMaxRows());r++){const g=sheet.getRowGroup(r,1);if(g)g.remove();}}catch(e){console.log('Pulizia gruppi righe: '+e.message);}}
+function clearActivityRowGroupsV13_(sheet){
+  try{
+    const end=Math.min(500,Math.max(sheet.getLastRow(),2));
+    for(let r=2;r<=end;r++){
+      const g=sheet.getRowGroup(r,1);
+      if(g)g.remove();
+    }
+  }catch(e){console.log('Pulizia gruppi righe: '+e.message);}
+}
 function activitySheetTaskStatusV16_(task){
   if(activityIsDoneV14_(task&&task.status))return 'FATTO';
   const due=activityDayV14_(task&&task.dueDate),today=activityDayV14_(new Date());
