@@ -41,7 +41,6 @@ function onEdit(e) {
   const name = sheet.getName();
 
   if (name === EVENT_APP.SHEETS.TASKS) {
-    eventRepairActivityLayoutV15_(sheet, false);
     eventHandleActivitiesEditV14_(e);
     return;
   }
@@ -543,7 +542,6 @@ function eventToggleTaskV14_(sh, row, checked) {
 function eventRefreshActivitiesV14_() {
   const sh = SpreadsheetApp.getActive().getSheetByName(EVENT_APP.SHEETS.TASKS);
   if (!sh) return;
-  eventRepairActivityLayoutV15_(sh, false);
 
   const rows = eventActivityRowsV14_(sh);
   const today = eventDayV14_(new Date());
