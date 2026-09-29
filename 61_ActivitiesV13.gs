@@ -1,3 +1,14 @@
+function activityExecutionLogV16_(action,eventId,detail){
+  try{
+    const ss=SpreadsheetApp.getActive();
+    const sh=ss.getSheetByName('_LOG');
+    if(!sh)return;
+    let user='';
+    try{user=Session.getActiveUser().getEmail()||Session.getEffectiveUser().getEmail()||'';}catch(e){}
+    sh.appendRow([new Date(),user,String(action||''),String(eventId||''),String(detail||'')]);
+  }catch(e){console.log('LOG V16: '+e.message);}
+}
+
 const ACTIVITY_V13=Object.freeze({VISIBLE:7,WIDTH:19,TYPE:8,OBJECTIVE_ID:9,TASK_ID:10,OBJECTIVE_ORDER:11,STEP_ORDER:12,COLOR:13,AUTO_DUE:14,PREVIOUS_ID:15,COMPLETED_AT:16,PATH:17,DUE_MODE:18,OFFSET:19});
 const EVENT_SHEET_SYNC_VERSION_V16='16';
 const EVENT_SHEET_V16_HEADERS=Object.freeze(['OBIETTIVO','SCADENZA','ATTIVITÀ','NOTE','FATTO','STATO','','TIPO RIGA','ID OBIETTIVO','ID TASK','ORDINE OBIETTIVO','ORDINE STEP','COLORE','SCADENZA AUTOMATICA','ID TASK PRECEDENTE','DATA COMPLETAMENTO','PERCORSO','MODALITA SCADENZA','OFFSET GIORNI']);
@@ -21,40 +32,65 @@ function markLegacyCalendarRowV15_(row){
 }
 
 function prepareEventSheetForSelectedEventV15(){
-  const event=selectedEvent_(),eventId=ensureEventId_(event),folder=createWorkFolderForEvent_(eventId,event,event._row);
-  let child=getLinkedEventSheet_(event),created=false;
-  if(child){
-    const schema=getEventSheetSchemaV15_(child);
-    if(schema.kind!=='V16'){
-      markLegacyCalendarRowV15_(event._row);
-      SpreadsheetApp.getUi().alert('Scheda evento vecchia','La scheda collegata resta invariata. Aprila direttamente per consultare attività, partecipanti e spese.',SpreadsheetApp.getUi().ButtonSet.OK);
-      return{created:false,legacy:true,id:child.getId(),url:child.getUrl()};
+  const startedAt=Date.now();
+  let eventId='';
+  try{
+    const event=selectedEvent_();
+    eventId=ensureEventId_(event);
+    activityExecutionLogV16_('START CREA/AGGIORNA SCHEDA',eventId,'Avvio');
+
+    const folder=createWorkFolderForEvent_(eventId,event,event._row);
+    activityExecutionLogV16_('FASE',eventId,'Cartella pronta');
+
+    let child=getLinkedEventSheet_(event),created=false;
+    if(child){
+      const schema=getEventSheetSchemaV15_(child);
+      if(schema.kind!=='V16'){
+        markLegacyCalendarRowV15_(event._row);
+        activityExecutionLogV16_('END',eventId,'Scheda legacy ignorata - '+(Date.now()-startedAt)+' ms');
+        SpreadsheetApp.getUi().alert('Scheda evento vecchia','La scheda collegata resta invariata. Aprila direttamente per consultare attività, partecipanti e spese.',SpreadsheetApp.getUi().ButtonSet.OK);
+        return{created:false,legacy:true,id:child.getId(),url:child.getUrl()};
+      }
+      activityExecutionLogV16_('FASE',eventId,'Sincronizzazione scheda esistente');
+      syncObjectiveEventSheetV13_(child,eventId);
+    }else{
+      const copy=DriveApp.getFileById(EVENT_SHEET.TEMPLATE_ID).makeCopy(buildEventSheetName_(event),DriveApp.getFolderById(folder.folderId));
+      child=SpreadsheetApp.openById(copy.getId());
+      child.setSpreadsheetLocale('it_IT');
+      child.setSpreadsheetTimeZone(APP.TZ);
+      created=true;
+      writeMeta_(child.getSheetByName(EVENT_SHEET.SHEETS.META),{SYNC_VERSION:EVENT_SHEET_SYNC_VERSION_V16});
+      activityExecutionLogV16_('FASE',eventId,'Copia modello creata: '+child.getId());
     }
-    syncObjectiveEventSheetV13_(child,eventId);
-  }else{
-    const copy=DriveApp.getFileById(EVENT_SHEET.TEMPLATE_ID).makeCopy(buildEventSheetName_(event),DriveApp.getFolderById(folder.folderId));
-    child=SpreadsheetApp.openById(copy.getId());
-    child.setSpreadsheetLocale('it_IT');
-    child.setSpreadsheetTimeZone(APP.TZ);
-    created=true;
-    writeMeta_(child.getSheetByName(EVENT_SHEET.SHEETS.META),{SYNC_VERSION:EVENT_SHEET_SYNC_VERSION_V16});
+
+    if(!isCurrentEventSheet_(child)||!isObjectiveActivitySheetV13_(child))throw new Error('Il modello della Scheda evento nuova non e compatibile con V16.');
+    validateEventSheetIdentity_(child,eventId);
+    writeEventMeta_(child,eventId,event,folder.folderId);
+    applyEventCommitment_(child,event);
+    activityExecutionLogV16_('FASE',eventId,'Meta e impegno scritti');
+
+    ensureDefaultObjectivesForEventV14_(eventId,event);
+    activityExecutionLogV16_('FASE',eventId,'Backend obiettivi pronto');
+
+    writeObjectivesToEventSheetV13_(eventId,child);
+    activityExecutionLogV16_('FASE',eventId,'Foglio Attivita scritto');
+
+    if(created)writeCurrentParticipantsToEventSheet_(eventId,child);
+    populateCurrentTechnicians_(child,event);
+    activityExecutionLogV16_('FASE',eventId,'Partecipanti e tecnici scritti');
+
+    setEventSheetLink_(event._row,child.getUrl());
+    refreshCalendarActivityDashboardV14_(eventId);
+    SpreadsheetApp.flush();
+
+    activityExecutionLogV16_('END',eventId,(created?'Creata':'Aggiornata')+' in '+(Date.now()-startedAt)+' ms');
+    SpreadsheetApp.getActive().toast(created?'Scheda evento V16 creata':'Scheda evento V16 aggiornata','Scheda evento',5);
+    return{created:created,legacy:false,id:child.getId(),url:child.getUrl()};
+  }catch(err){
+    activityExecutionLogV16_('ERROR',eventId,(err&&err.message?err.message:String(err))+' - '+(Date.now()-startedAt)+' ms');
+    throw err;
   }
-
-  if(!isCurrentEventSheet_(child)||!isObjectiveActivitySheetV13_(child))throw new Error('Il modello della Scheda evento nuova non e compatibile con V16.');
-  validateEventSheetIdentity_(child,eventId);
-  writeEventMeta_(child,eventId,event,folder.folderId);
-  applyEventCommitment_(child,event);
-  ensureDefaultObjectivesForEventV14_(eventId,event);
-  writeObjectivesToEventSheetV13_(eventId,child);
-  if(created)writeCurrentParticipantsToEventSheet_(eventId,child);
-  populateCurrentTechnicians_(child,event);
-  setEventSheetLink_(event._row,child.getUrl());
-  refreshCalendarActivityDashboardV14_(eventId);
-  SpreadsheetApp.flush();
-  SpreadsheetApp.getActive().toast(created?'Scheda evento V16 creata':'Scheda evento V16 aggiornata','Scheda evento',5);
-  return{created:created,legacy:false,id:child.getId(),url:child.getUrl()};
 }
-
 function isObjectiveActivitySheetV13_(child){
   const sh=child&&child.getSheetByName(EVENT_SHEET.SHEETS.TASKS);
   if(!sh)return false;
